@@ -1,0 +1,13 @@
+{
+    "name": "lauzis/splecheh",
+    "description": "WordPress spellcheck plugin",
+    "type": "wordpress-plugin",
+    "license": "MIT",
+    "require": {
+        "php": ">=8.0",
+        "htmlburger/carbon-fields": "^3.6"
+    },
+    "config": {
+        "optimize-autoloader": true
+    }
+}

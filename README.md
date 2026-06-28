@@ -21,6 +21,11 @@ Built with the assistance of [CodeRabbit](https://coderabbit.ai) for code review
 
 ## Change log
 
+### --- 0.2.0 ---
+- Settings page (via Carbon Fields) lists all public post types as checkboxes.
+- Posts and Pages are enabled for spellchecking by default on plugin activation.
+- `splecheh_get_enabled_post_types()` helper returns the active post type selection.
+
 ### --- 0.1.0 ---
 - Initial plugin scaffold with admin menu (Spell Check, Help, Settings subpages).
 
