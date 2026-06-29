@@ -16,6 +16,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 define( 'SPLECHEH_VERSION', '0.2.0' );
 define( 'SPLECHEH_DIR', plugin_dir_path( __FILE__ ) );
+define( 'SPLECHEH_LOG_PATH', SPLECHEH_DIR . 'logs' );
+
+require_once SPLECHEH_DIR . 'classes/Logs.php';
 
 // Bootstrap Carbon Fields after all themes/plugins are loaded.
 add_action(
@@ -35,6 +38,12 @@ register_activation_hook( __FILE__, 'splecheh_activate' );
 function splecheh_activate(): void {
 	// Carbon Fields stores theme_options fields under _{field_name} in wp_options.
 	add_option( '_splecheh_post_types', [ 'post', 'page' ] );
+
+	if ( ! file_exists( SPLECHEH_LOG_PATH ) ) {
+		wp_mkdir_p( SPLECHEH_LOG_PATH );
+		file_put_contents( SPLECHEH_LOG_PATH . '/index.php', '<?php // silence is golden' );
+	}
+	Splecheh_Logs::addLog( 'plugin', 'Plugin activated', [ 'version' => SPLECHEH_VERSION ] );
 }
 
 add_action( 'admin_menu', 'splecheh_register_menu' );
@@ -66,6 +75,15 @@ function splecheh_register_menu(): void {
 		'edit_posts',
 		'splecheh-help',
 		'splecheh_page_help'
+	);
+
+	add_submenu_page(
+		'splecheh',
+		__( 'Logs', 'splecheh' ),
+		__( 'Logs', 'splecheh' ),
+		'edit_posts',
+		'splecheh-logs',
+		'splecheh_page_logs'
 	);
 }
 
@@ -110,4 +128,8 @@ function splecheh_page_spell_check(): void {
 
 function splecheh_page_help(): void {
 	echo '<div class="wrap"><h1>' . esc_html__( 'Help', 'splecheh' ) . '</h1></div>';
+}
+
+function splecheh_page_logs(): void {
+	require_once SPLECHEH_DIR . 'templates/logs.php';
 }
