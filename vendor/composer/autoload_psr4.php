@@ -6,5 +6,11 @@ $vendorDir = dirname(__DIR__);
 $baseDir = dirname($vendorDir);
 
 return array(
+    'Webmozart\\Assert\\' => array($vendorDir . '/webmozart/assert/src'),
+    'Symfony\\Component\\Process\\' => array($vendorDir . '/symfony/process'),
+    'Psr\\Http\\Message\\' => array($vendorDir . '/psr/http-factory/src', $vendorDir . '/psr/http-message/src'),
+    'Psr\\Http\\Client\\' => array($vendorDir . '/psr/http-client/src'),
+    'PhpSpellcheck\\' => array($vendorDir . '/tigitz/php-spellchecker/src'),
+    'Nyholm\\Psr7\\' => array($vendorDir . '/nyholm/psr7/src'),
     'Carbon_Fields\\' => array($vendorDir . '/htmlburger/carbon-fields/core'),
 );
