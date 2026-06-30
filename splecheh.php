@@ -149,7 +149,7 @@ function splecheh_page_spell_check(): void {
 }
 
 function splecheh_page_help(): void {
-	echo '<div class="wrap"><h1>' . esc_html__( 'Help', 'splecheh' ) . '</h1></div>';
+	require_once SPLECHEH_DIR . 'templates/help.php';
 }
 
 function splecheh_page_logs(): void {
