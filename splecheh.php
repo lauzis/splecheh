@@ -23,6 +23,10 @@ require_once SPLECHEH_DIR . 'classes/Logs.php';
 require_once SPLECHEH_DIR . 'classes/Notification.php';
 require_once SPLECHEH_DIR . 'classes/NotificationManager.php';
 require_once SPLECHEH_DIR . 'classes/SpellCheckReport.php';
+require_once SPLECHEH_DIR . 'classes/SplechehCron.php';
+
+add_filter( 'cron_schedules', [ 'Splecheh_Cron', 'cron_schedules' ] );
+add_action( Splecheh_Cron::HOOK, [ 'Splecheh_Cron', 'run_batch' ] );
 
 // Bootstrap Carbon Fields after all themes/plugins are loaded.
 add_action(
@@ -51,8 +55,9 @@ add_action(
 	}
 );
 
-// Set defaults (post and page enabled) on first activation.
+// Set defaults on first activation and clear cron on deactivation.
 register_activation_hook( __FILE__, 'splecheh_activate' );
+register_deactivation_hook( __FILE__, 'splecheh_deactivate' );
 
 function splecheh_activate(): void {
 	// Carbon Fields stores theme_options fields under _{field_name} in wp_options.
@@ -63,6 +68,11 @@ function splecheh_activate(): void {
 		file_put_contents( SPLECHEH_LOG_PATH . '/index.php', '<?php // silence is golden' );
 	}
 	Splecheh_Logs::addLog( 'plugin', 'Plugin activated', [ 'version' => SPLECHEH_VERSION ] );
+	Splecheh_Cron::sync();
+}
+
+function splecheh_deactivate(): void {
+	Splecheh_Cron::deactivate();
 }
 
 add_action( 'admin_notices', [ 'Splecheh_NotificationManager', 'render' ] );
@@ -70,6 +80,12 @@ add_action( 'admin_enqueue_scripts', [ 'Splecheh_NotificationManager', 'enqueue_
 add_action( 'admin_enqueue_scripts', 'splecheh_enqueue_spellcheck_assets' );
 add_action( 'wp_ajax_splecheh_dismiss_notification', [ 'Splecheh_NotificationManager', 'handle_dismiss' ] );
 add_action( 'wp_ajax_splecheh_run', 'splecheh_ajax_run_spellcheck' );
+add_action( 'wp_ajax_splecheh_run_now', 'splecheh_ajax_run_now' );
+add_action( 'carbon_fields_theme_options_container_saved', 'splecheh_sync_bg_cron' );
+
+function splecheh_sync_bg_cron(): void {
+	Splecheh_Cron::sync();
+}
 
 add_action( 'admin_menu', 'splecheh_register_menu' );
 
@@ -143,6 +159,34 @@ function splecheh_register_settings_fields(): void {
 							$default_language
 						)
 					),
+
+				\Carbon_Fields\Field::make( 'separator', 'splecheh_bg_separator', __( 'Background Spell Check', 'splecheh' ) ),
+
+				\Carbon_Fields\Field::make( 'checkbox', 'splecheh_bg_enabled', __( 'Enable Background Spell Check', 'splecheh' ) )
+					->set_help_text( __( 'When enabled, spell check runs automatically in the background according to the schedule below.', 'splecheh' ) ),
+
+				\Carbon_Fields\Field::make( 'select', 'splecheh_bg_interval', __( 'Schedule Interval', 'splecheh' ) )
+					->set_options(
+						[
+							'splecheh_1min'  => __( 'Every 1 minute', 'splecheh' ),
+							'splecheh_5min'  => __( 'Every 5 minutes', 'splecheh' ),
+							'splecheh_10min' => __( 'Every 10 minutes', 'splecheh' ),
+							'splecheh_15min' => __( 'Every 15 minutes', 'splecheh' ),
+							'splecheh_30min' => __( 'Every 30 minutes', 'splecheh' ),
+							'splecheh_1h'    => __( 'Every 1 hour', 'splecheh' ),
+							'splecheh_2h'    => __( 'Every 2 hours', 'splecheh' ),
+							'splecheh_4h'    => __( 'Every 4 hours', 'splecheh' ),
+							'splecheh_8h'    => __( 'Every 8 hours', 'splecheh' ),
+							'splecheh_12h'   => __( 'Every 12 hours', 'splecheh' ),
+							'splecheh_24h'   => __( 'Every 24 hours', 'splecheh' ),
+						]
+					)
+					->set_default_value( 'splecheh_1h' )
+					->set_help_text( __( 'How often the background spell check should run.', 'splecheh' ) ),
+
+				\Carbon_Fields\Field::make( 'text', 'splecheh_bg_batch_size', __( 'Batch Size', 'splecheh' ) )
+					->set_default_value( '50' )
+					->set_help_text( __( 'Number of posts to check per background run. Default: 50.', 'splecheh' ) ),
 			]
 		);
 }
@@ -188,13 +232,15 @@ function splecheh_enqueue_spellcheck_assets( string $hook ): void {
 		'splecheh-spellcheck',
 		'splechehCheck',
 		[
-			'ajaxUrl' => admin_url( 'admin-ajax.php' ),
-			'nonce'   => wp_create_nonce( 'splecheh_run' ),
-			'i18n'    => [
-				'upToDate'   => __( 'Up to date', 'splecheh' ),
-				'viewReport' => __( 'View Report', 'splecheh' ),
-				'noErrors'   => __( 'No spelling errors found.', 'splecheh' ),
+			'ajaxUrl'    => admin_url( 'admin-ajax.php' ),
+			'nonce'      => wp_create_nonce( 'splecheh_run' ),
+			'runNowNonce' => wp_create_nonce( 'splecheh_run_now' ),
+			'i18n'       => [
+				'upToDate'    => __( 'Up to date', 'splecheh' ),
+				'viewReport'  => __( 'View Report', 'splecheh' ),
+				'noErrors'    => __( 'No spelling errors found.', 'splecheh' ),
 				'errorsFound' => __( 'spelling error(s) found.', 'splecheh' ),
+				'running'     => __( 'Running…', 'splecheh' ),
 			],
 		]
 	);
@@ -229,6 +275,31 @@ function splecheh_ajax_run_spellcheck(): void {
 				gmdate( 'Y-m-d H:i:s' ),
 				get_option( 'date_format' ) . ' ' . get_option( 'time_format' )
 			),
+		]
+	);
+}
+
+function splecheh_ajax_run_now(): void {
+	check_ajax_referer( 'splecheh_run_now', 'nonce' );
+
+	if ( ! current_user_can( 'manage_options' ) ) {
+		wp_send_json_error( __( 'Insufficient permissions.', 'splecheh' ), 403 );
+	}
+
+	Splecheh_Cron::run_batch();
+
+	$summary = Splecheh_Cron::get_summary();
+
+	wp_send_json_success(
+		[
+			'last_run'      => $summary['last_run']
+				? get_date_from_gmt(
+					gmdate( 'Y-m-d H:i:s', strtotime( $summary['last_run'] ) ),
+					get_option( 'date_format' ) . ' ' . get_option( 'time_format' )
+				)
+				: '',
+			'issues_found'  => (int) $summary['issues_found'],
+			'posts_pending' => (int) $summary['posts_pending'],
 		]
 	);
 }

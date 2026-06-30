@@ -21,6 +21,12 @@ Built with the assistance of [CodeRabbit](https://coderabbit.ai) for code review
 
 ## Change log
 
+### --- 0.4.0 ---
+- Background spell check: enable/disable toggle, configurable schedule interval (1 min – 24 h), and configurable batch size (default 50) added to Settings page.
+- Custom WP-Cron schedules registered for all supported intervals; cron event is automatically registered/deregistered when settings change.
+- Cron callback processes only posts that are never checked or outdated (post edited since last check), up to the configured batch size, with a transient lock to prevent concurrent runs.
+- Status bar on the Spell Check page shows last run time, issues found in the last batch, and posts still pending; includes a "Run Now" button for immediate on-demand execution.
+
 ### --- 0.3.0 ---
 - Spell Check page: paginated table of posts from enabled post types, with filter by post type and text search.
 - Per-row "Spell Check" button triggers an AJAX spell check via `tigitz/php-spellchecker` (aspell / pspell).
