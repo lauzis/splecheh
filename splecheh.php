@@ -17,8 +17,11 @@ if ( ! defined( 'ABSPATH' ) ) {
 define( 'SPLECHEH_VERSION', '0.2.0' );
 define( 'SPLECHEH_DIR', plugin_dir_path( __FILE__ ) );
 define( 'SPLECHEH_LOG_PATH', SPLECHEH_DIR . 'logs' );
+define( 'SPLECHEH_PLUGIN_FILE', __FILE__ );
 
 require_once SPLECHEH_DIR . 'classes/Logs.php';
+require_once SPLECHEH_DIR . 'classes/Notification.php';
+require_once SPLECHEH_DIR . 'classes/NotificationManager.php';
 
 // Bootstrap Carbon Fields after all themes/plugins are loaded.
 add_action(
@@ -45,6 +48,10 @@ function splecheh_activate(): void {
 	}
 	Splecheh_Logs::addLog( 'plugin', 'Plugin activated', [ 'version' => SPLECHEH_VERSION ] );
 }
+
+add_action( 'admin_notices', [ 'Splecheh_NotificationManager', 'render' ] );
+add_action( 'admin_enqueue_scripts', [ 'Splecheh_NotificationManager', 'enqueue_assets' ] );
+add_action( 'wp_ajax_splecheh_dismiss_notification', [ 'Splecheh_NotificationManager', 'handle_dismiss' ] );
 
 add_action( 'admin_menu', 'splecheh_register_menu' );
 
