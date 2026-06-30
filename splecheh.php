@@ -32,6 +32,21 @@ add_action(
 		}
 		require_once SPLECHEH_DIR . 'vendor/autoload.php';
 		\Carbon_Fields\Carbon_Fields::boot();
+
+		if ( ! \Composer\InstalledVersions::isInstalled( 'tigitz/php-spellchecker' ) ) {
+			Splecheh_NotificationManager::register(
+				new Splecheh_Notification(
+					'missing-php-spellchecker',
+					sprintf(
+						/* translators: %s: composer require command */
+						__( '<strong>Splecheh:</strong> The spell-check library is missing. Run <code>%s</code> in your plugin directory to install it.', 'splecheh' ),
+						'composer require tigitz/php-spellchecker'
+					),
+					'error',
+					'one-time'
+				)
+			);
+		}
 	}
 );
 

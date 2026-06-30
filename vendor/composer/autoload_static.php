@@ -6,7 +6,30 @@ namespace Composer\Autoload;
 
 class ComposerStaticInitd7df96238a0b7030894b0ddffe3a40ed
 {
+    public static $files = array (
+        '9b9cd57dc1a77520cafde0b2a9ee1b13' => __DIR__ . '/..' . '/tigitz/php-spellchecker/src/Text/functions.php',
+        '65ef39dc9f834cda71230ca2e15f84e6' => __DIR__ . '/..' . '/tigitz/php-spellchecker/src/Utils/php-functions.php',
+    );
+
     public static $prefixLengthsPsr4 = array (
+        'W' =>
+        array (
+            'Webmozart\\Assert\\' => 17,
+        ),
+        'S' =>
+        array (
+            'Symfony\\Component\\Process\\' => 26,
+        ),
+        'P' =>
+        array (
+            'Psr\\Http\\Message\\' => 17,
+            'Psr\\Http\\Client\\' => 16,
+            'PhpSpellcheck\\' => 14,
+        ),
+        'N' =>
+        array (
+            'Nyholm\\Psr7\\' => 12,
+        ),
         'C' =>
         array (
             'Carbon_Fields\\' => 14,
@@ -14,6 +37,31 @@ class ComposerStaticInitd7df96238a0b7030894b0ddffe3a40ed
     );
 
     public static $prefixDirsPsr4 = array (
+        'Webmozart\\Assert\\' =>
+        array (
+            0 => __DIR__ . '/..' . '/webmozart/assert/src',
+        ),
+        'Symfony\\Component\\Process\\' =>
+        array (
+            0 => __DIR__ . '/..' . '/symfony/process',
+        ),
+        'Psr\\Http\\Message\\' =>
+        array (
+            0 => __DIR__ . '/..' . '/psr/http-factory/src',
+            1 => __DIR__ . '/..' . '/psr/http-message/src',
+        ),
+        'Psr\\Http\\Client\\' =>
+        array (
+            0 => __DIR__ . '/..' . '/psr/http-client/src',
+        ),
+        'PhpSpellcheck\\' =>
+        array (
+            0 => __DIR__ . '/..' . '/tigitz/php-spellchecker/src',
+        ),
+        'Nyholm\\Psr7\\' =>
+        array (
+            0 => __DIR__ . '/..' . '/nyholm/psr7/src',
+        ),
         'Carbon_Fields\\' =>
         array (
             0 => __DIR__ . '/..' . '/htmlburger/carbon-fields/core',
@@ -151,6 +199,96 @@ class ComposerStaticInitd7df96238a0b7030894b0ddffe3a40ed
         'Carbon_Fields\\Widget' => __DIR__ . '/..' . '/htmlburger/carbon-fields/core/Widget.php',
         'Carbon_Fields\\Widget\\Widget' => __DIR__ . '/..' . '/htmlburger/carbon-fields/core/Widget/Widget.php',
         'Composer\\InstalledVersions' => __DIR__ . '/..' . '/composer/InstalledVersions.php',
+        'Nyholm\\Psr7\\Factory\\HttplugFactory' => __DIR__ . '/..' . '/nyholm/psr7/src/Factory/HttplugFactory.php',
+        'Nyholm\\Psr7\\Factory\\Psr17Factory' => __DIR__ . '/..' . '/nyholm/psr7/src/Factory/Psr17Factory.php',
+        'Nyholm\\Psr7\\MessageTrait' => __DIR__ . '/..' . '/nyholm/psr7/src/MessageTrait.php',
+        'Nyholm\\Psr7\\Request' => __DIR__ . '/..' . '/nyholm/psr7/src/Request.php',
+        'Nyholm\\Psr7\\RequestTrait' => __DIR__ . '/..' . '/nyholm/psr7/src/RequestTrait.php',
+        'Nyholm\\Psr7\\Response' => __DIR__ . '/..' . '/nyholm/psr7/src/Response.php',
+        'Nyholm\\Psr7\\ServerRequest' => __DIR__ . '/..' . '/nyholm/psr7/src/ServerRequest.php',
+        'Nyholm\\Psr7\\Stream' => __DIR__ . '/..' . '/nyholm/psr7/src/Stream.php',
+        'Nyholm\\Psr7\\StreamTrait' => __DIR__ . '/..' . '/nyholm/psr7/src/StreamTrait.php',
+        'Nyholm\\Psr7\\UploadedFile' => __DIR__ . '/..' . '/nyholm/psr7/src/UploadedFile.php',
+        'Nyholm\\Psr7\\Uri' => __DIR__ . '/..' . '/nyholm/psr7/src/Uri.php',
+        'PhpSpellcheck\\Exception\\ExceptionInterface' => __DIR__ . '/..' . '/tigitz/php-spellchecker/src/Exception/ExceptionInterface.php',
+        'PhpSpellcheck\\Exception\\FilesystemException' => __DIR__ . '/..' . '/tigitz/php-spellchecker/src/Exception/FilesystemException.php',
+        'PhpSpellcheck\\Exception\\InvalidArgumentException' => __DIR__ . '/..' . '/tigitz/php-spellchecker/src/Exception/InvalidArgumentException.php',
+        'PhpSpellcheck\\Exception\\JsonException' => __DIR__ . '/..' . '/tigitz/php-spellchecker/src/Exception/JsonException.php',
+        'PhpSpellcheck\\Exception\\LogicException' => __DIR__ . '/..' . '/tigitz/php-spellchecker/src/Exception/LogicException.php',
+        'PhpSpellcheck\\Exception\\PcreException' => __DIR__ . '/..' . '/tigitz/php-spellchecker/src/Exception/PcreException.php',
+        'PhpSpellcheck\\Exception\\ProcessFailedException' => __DIR__ . '/..' . '/tigitz/php-spellchecker/src/Exception/ProcessFailedException.php',
+        'PhpSpellcheck\\Exception\\ProcessHasErrorOutputException' => __DIR__ . '/..' . '/tigitz/php-spellchecker/src/Exception/ProcessHasErrorOutputException.php',
+        'PhpSpellcheck\\Exception\\PspellException' => __DIR__ . '/..' . '/tigitz/php-spellchecker/src/Exception/PspellException.php',
+        'PhpSpellcheck\\Exception\\RuntimeException' => __DIR__ . '/..' . '/tigitz/php-spellchecker/src/Exception/RuntimeException.php',
+        'PhpSpellcheck\\Misspelling' => __DIR__ . '/..' . '/tigitz/php-spellchecker/src/Misspelling.php',
+        'PhpSpellcheck\\MisspellingFinder' => __DIR__ . '/..' . '/tigitz/php-spellchecker/src/MisspellingFinder.php',
+        'PhpSpellcheck\\MisspellingHandler\\EchoHandler' => __DIR__ . '/..' . '/tigitz/php-spellchecker/src/MisspellingHandler/EchoHandler.php',
+        'PhpSpellcheck\\MisspellingHandler\\MisspellingHandlerInterface' => __DIR__ . '/..' . '/tigitz/php-spellchecker/src/MisspellingHandler/MisspellingHandlerInterface.php',
+        'PhpSpellcheck\\MisspellingInterface' => __DIR__ . '/..' . '/tigitz/php-spellchecker/src/MisspellingInterface.php',
+        'PhpSpellcheck\\Source\\Directory' => __DIR__ . '/..' . '/tigitz/php-spellchecker/src/Source/Directory.php',
+        'PhpSpellcheck\\Source\\File' => __DIR__ . '/..' . '/tigitz/php-spellchecker/src/Source/File.php',
+        'PhpSpellcheck\\Source\\MultiSource' => __DIR__ . '/..' . '/tigitz/php-spellchecker/src/Source/MultiSource.php',
+        'PhpSpellcheck\\Source\\SourceInterface' => __DIR__ . '/..' . '/tigitz/php-spellchecker/src/Source/SourceInterface.php',
+        'PhpSpellcheck\\Spellchecker\\Aspell' => __DIR__ . '/..' . '/tigitz/php-spellchecker/src/Spellchecker/Aspell.php',
+        'PhpSpellcheck\\Spellchecker\\Hunspell' => __DIR__ . '/..' . '/tigitz/php-spellchecker/src/Spellchecker/Hunspell.php',
+        'PhpSpellcheck\\Spellchecker\\Ispell' => __DIR__ . '/..' . '/tigitz/php-spellchecker/src/Spellchecker/Ispell.php',
+        'PhpSpellcheck\\Spellchecker\\JamSpell' => __DIR__ . '/..' . '/tigitz/php-spellchecker/src/Spellchecker/JamSpell.php',
+        'PhpSpellcheck\\Spellchecker\\LanguageTool' => __DIR__ . '/..' . '/tigitz/php-spellchecker/src/Spellchecker/LanguageTool.php',
+        'PhpSpellcheck\\Spellchecker\\LanguageTool\\LanguageToolApiClient' => __DIR__ . '/..' . '/tigitz/php-spellchecker/src/Spellchecker/LanguageTool/LanguageToolApiClient.php',
+        'PhpSpellcheck\\Spellchecker\\MultiSpellchecker' => __DIR__ . '/..' . '/tigitz/php-spellchecker/src/Spellchecker/MultiSpellchecker.php',
+        'PhpSpellcheck\\Spellchecker\\PHPPspell' => __DIR__ . '/..' . '/tigitz/php-spellchecker/src/Spellchecker/PHPPspell.php',
+        'PhpSpellcheck\\Spellchecker\\SpellcheckerInterface' => __DIR__ . '/..' . '/tigitz/php-spellchecker/src/Spellchecker/SpellcheckerInterface.php',
+        'PhpSpellcheck\\Text' => __DIR__ . '/..' . '/tigitz/php-spellchecker/src/Text.php',
+        'PhpSpellcheck\\TextInterface' => __DIR__ . '/..' . '/tigitz/php-spellchecker/src/TextInterface.php',
+        'PhpSpellcheck\\TextProcessor\\MarkdownRemover' => __DIR__ . '/..' . '/tigitz/php-spellchecker/src/TextProcessor/MarkdownRemover.php',
+        'PhpSpellcheck\\TextProcessor\\TextProcessorInterface' => __DIR__ . '/..' . '/tigitz/php-spellchecker/src/TextProcessor/TextProcessorInterface.php',
+        'PhpSpellcheck\\Utils\\CommandLine' => __DIR__ . '/..' . '/tigitz/php-spellchecker/src/Utils/CommandLine.php',
+        'PhpSpellcheck\\Utils\\IspellParser' => __DIR__ . '/..' . '/tigitz/php-spellchecker/src/Utils/IspellParser.php',
+        'PhpSpellcheck\\Utils\\LineAndOffset' => __DIR__ . '/..' . '/tigitz/php-spellchecker/src/Utils/LineAndOffset.php',
+        'PhpSpellcheck\\Utils\\ProcessRunner' => __DIR__ . '/..' . '/tigitz/php-spellchecker/src/Utils/ProcessRunner.php',
+        'Psr\\Http\\Client\\ClientExceptionInterface' => __DIR__ . '/..' . '/psr/http-client/src/ClientExceptionInterface.php',
+        'Psr\\Http\\Client\\ClientInterface' => __DIR__ . '/..' . '/psr/http-client/src/ClientInterface.php',
+        'Psr\\Http\\Client\\NetworkExceptionInterface' => __DIR__ . '/..' . '/psr/http-client/src/NetworkExceptionInterface.php',
+        'Psr\\Http\\Client\\RequestExceptionInterface' => __DIR__ . '/..' . '/psr/http-client/src/RequestExceptionInterface.php',
+        'Psr\\Http\\Message\\MessageInterface' => __DIR__ . '/..' . '/psr/http-message/src/MessageInterface.php',
+        'Psr\\Http\\Message\\RequestFactoryInterface' => __DIR__ . '/..' . '/psr/http-factory/src/RequestFactoryInterface.php',
+        'Psr\\Http\\Message\\RequestInterface' => __DIR__ . '/..' . '/psr/http-message/src/RequestInterface.php',
+        'Psr\\Http\\Message\\ResponseFactoryInterface' => __DIR__ . '/..' . '/psr/http-factory/src/ResponseFactoryInterface.php',
+        'Psr\\Http\\Message\\ResponseInterface' => __DIR__ . '/..' . '/psr/http-message/src/ResponseInterface.php',
+        'Psr\\Http\\Message\\ServerRequestFactoryInterface' => __DIR__ . '/..' . '/psr/http-factory/src/ServerRequestFactoryInterface.php',
+        'Psr\\Http\\Message\\ServerRequestInterface' => __DIR__ . '/..' . '/psr/http-message/src/ServerRequestInterface.php',
+        'Psr\\Http\\Message\\StreamFactoryInterface' => __DIR__ . '/..' . '/psr/http-factory/src/StreamFactoryInterface.php',
+        'Psr\\Http\\Message\\StreamInterface' => __DIR__ . '/..' . '/psr/http-message/src/StreamInterface.php',
+        'Psr\\Http\\Message\\UploadedFileFactoryInterface' => __DIR__ . '/..' . '/psr/http-factory/src/UploadedFileFactoryInterface.php',
+        'Psr\\Http\\Message\\UploadedFileInterface' => __DIR__ . '/..' . '/psr/http-message/src/UploadedFileInterface.php',
+        'Psr\\Http\\Message\\UriFactoryInterface' => __DIR__ . '/..' . '/psr/http-factory/src/UriFactoryInterface.php',
+        'Psr\\Http\\Message\\UriInterface' => __DIR__ . '/..' . '/psr/http-message/src/UriInterface.php',
+        'Symfony\\Component\\Process\\Exception\\ExceptionInterface' => __DIR__ . '/..' . '/symfony/process/Exception/ExceptionInterface.php',
+        'Symfony\\Component\\Process\\Exception\\InvalidArgumentException' => __DIR__ . '/..' . '/symfony/process/Exception/InvalidArgumentException.php',
+        'Symfony\\Component\\Process\\Exception\\LogicException' => __DIR__ . '/..' . '/symfony/process/Exception/LogicException.php',
+        'Symfony\\Component\\Process\\Exception\\ProcessFailedException' => __DIR__ . '/..' . '/symfony/process/Exception/ProcessFailedException.php',
+        'Symfony\\Component\\Process\\Exception\\ProcessSignaledException' => __DIR__ . '/..' . '/symfony/process/Exception/ProcessSignaledException.php',
+        'Symfony\\Component\\Process\\Exception\\ProcessStartFailedException' => __DIR__ . '/..' . '/symfony/process/Exception/ProcessStartFailedException.php',
+        'Symfony\\Component\\Process\\Exception\\ProcessTimedOutException' => __DIR__ . '/..' . '/symfony/process/Exception/ProcessTimedOutException.php',
+        'Symfony\\Component\\Process\\Exception\\RunProcessFailedException' => __DIR__ . '/..' . '/symfony/process/Exception/RunProcessFailedException.php',
+        'Symfony\\Component\\Process\\Exception\\RuntimeException' => __DIR__ . '/..' . '/symfony/process/Exception/RuntimeException.php',
+        'Symfony\\Component\\Process\\ExecutableFinder' => __DIR__ . '/..' . '/symfony/process/ExecutableFinder.php',
+        'Symfony\\Component\\Process\\InputStream' => __DIR__ . '/..' . '/symfony/process/InputStream.php',
+        'Symfony\\Component\\Process\\Messenger\\RunProcessContext' => __DIR__ . '/..' . '/symfony/process/Messenger/RunProcessContext.php',
+        'Symfony\\Component\\Process\\Messenger\\RunProcessMessage' => __DIR__ . '/..' . '/symfony/process/Messenger/RunProcessMessage.php',
+        'Symfony\\Component\\Process\\Messenger\\RunProcessMessageHandler' => __DIR__ . '/..' . '/symfony/process/Messenger/RunProcessMessageHandler.php',
+        'Symfony\\Component\\Process\\PhpExecutableFinder' => __DIR__ . '/..' . '/symfony/process/PhpExecutableFinder.php',
+        'Symfony\\Component\\Process\\PhpProcess' => __DIR__ . '/..' . '/symfony/process/PhpProcess.php',
+        'Symfony\\Component\\Process\\PhpSubprocess' => __DIR__ . '/..' . '/symfony/process/PhpSubprocess.php',
+        'Symfony\\Component\\Process\\Pipes\\AbstractPipes' => __DIR__ . '/..' . '/symfony/process/Pipes/AbstractPipes.php',
+        'Symfony\\Component\\Process\\Pipes\\PipesInterface' => __DIR__ . '/..' . '/symfony/process/Pipes/PipesInterface.php',
+        'Symfony\\Component\\Process\\Pipes\\UnixPipes' => __DIR__ . '/..' . '/symfony/process/Pipes/UnixPipes.php',
+        'Symfony\\Component\\Process\\Pipes\\WindowsPipes' => __DIR__ . '/..' . '/symfony/process/Pipes/WindowsPipes.php',
+        'Symfony\\Component\\Process\\Process' => __DIR__ . '/..' . '/symfony/process/Process.php',
+        'Symfony\\Component\\Process\\ProcessUtils' => __DIR__ . '/..' . '/symfony/process/ProcessUtils.php',
+        'Webmozart\\Assert\\Assert' => __DIR__ . '/..' . '/webmozart/assert/src/Assert.php',
+        'Webmozart\\Assert\\InvalidArgumentException' => __DIR__ . '/..' . '/webmozart/assert/src/InvalidArgumentException.php',
+        'Webmozart\\Assert\\Mixin' => __DIR__ . '/..' . '/webmozart/assert/src/Mixin.php',
     );
 
     public static function getInitializer(ClassLoader $loader)
