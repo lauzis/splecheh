@@ -21,6 +21,14 @@ Built with the assistance of [CodeRabbit](https://coderabbit.ai) for code review
 
 ## Change log
 
+### --- 0.3.0 ---
+- Spell Check page: paginated table of posts from enabled post types, with filter by post type and text search.
+- Per-row "Spell Check" button triggers an AJAX spell check via `tigitz/php-spellchecker` (aspell / pspell).
+- Reports are saved as UUID-named JSON files in `wp-content/uploads/splecheh/` and linked via post meta.
+- Report JSON includes: wrong word, up to 5 suggestions, and the sentence excerpt where the error occurs.
+- Status column shows whether the report is current, outdated (post edited since last check), or never checked.
+- Language setting added to Settings page; defaults to the WordPress site locale.
+
 ### --- 0.2.0 ---
 - Settings page (via Carbon Fields) lists all public post types as checkboxes.
 - Posts and Pages are enabled for spellchecking by default on plugin activation.

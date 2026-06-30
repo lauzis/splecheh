@@ -3,7 +3,7 @@
  * Plugin Name: Splecheh - WordPress spellcheck plugin
  * Plugin URI:  https://github.com/lauzis/splecheh
  * Description: Run spell check on all articles and post types to find spelling errors.
- * Version:     0.2.0
+ * Version:     0.3.0
  * Author:      Aivars Lauzis
  * Text Domain: splecheh
  * License:     MIT
@@ -14,7 +14,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'SPLECHEH_VERSION', '0.2.0' );
+define( 'SPLECHEH_VERSION', '0.3.0' );
 define( 'SPLECHEH_DIR', plugin_dir_path( __FILE__ ) );
 define( 'SPLECHEH_LOG_PATH', SPLECHEH_DIR . 'logs' );
 define( 'SPLECHEH_PLUGIN_FILE', __FILE__ );
@@ -22,6 +22,7 @@ define( 'SPLECHEH_PLUGIN_FILE', __FILE__ );
 require_once SPLECHEH_DIR . 'classes/Logs.php';
 require_once SPLECHEH_DIR . 'classes/Notification.php';
 require_once SPLECHEH_DIR . 'classes/NotificationManager.php';
+require_once SPLECHEH_DIR . 'classes/SpellCheckReport.php';
 
 // Bootstrap Carbon Fields after all themes/plugins are loaded.
 add_action(
@@ -66,7 +67,9 @@ function splecheh_activate(): void {
 
 add_action( 'admin_notices', [ 'Splecheh_NotificationManager', 'render' ] );
 add_action( 'admin_enqueue_scripts', [ 'Splecheh_NotificationManager', 'enqueue_assets' ] );
+add_action( 'admin_enqueue_scripts', 'splecheh_enqueue_spellcheck_assets' );
 add_action( 'wp_ajax_splecheh_dismiss_notification', [ 'Splecheh_NotificationManager', 'handle_dismiss' ] );
+add_action( 'wp_ajax_splecheh_run', 'splecheh_ajax_run_spellcheck' );
 
 add_action( 'admin_menu', 'splecheh_register_menu' );
 
@@ -119,6 +122,10 @@ function splecheh_register_settings_fields(): void {
 		$options[ $type->name ] = $type->label;
 	}
 
+	// Default language: first part of WordPress locale (e.g. "en" from "en_US").
+	$locale           = get_locale();
+	$default_language = explode( '_', $locale )[0];
+
 	\Carbon_Fields\Container::make( 'theme_options', __( 'Settings', 'splecheh' ) )
 		->set_page_parent( 'splecheh' )
 		->add_fields(
@@ -126,6 +133,16 @@ function splecheh_register_settings_fields(): void {
 				\Carbon_Fields\Field::make( 'set', 'splecheh_post_types', __( 'Post Types to Spellcheck', 'splecheh' ) )
 					->set_options( $options )
 					->set_help_text( __( 'Select which post types should be checked for spelling errors. Posts and Pages are enabled by default.', 'splecheh' ) ),
+
+				\Carbon_Fields\Field::make( 'text', 'splecheh_language', __( 'Spell Check Language', 'splecheh' ) )
+					->set_default_value( $default_language )
+					->set_help_text(
+						sprintf(
+							/* translators: %s: default locale code */
+							__( 'Language code for the spell checker (e.g. "en", "fr", "de"). Defaults to the WordPress site language (%s).', 'splecheh' ),
+							$default_language
+						)
+					),
 			]
 		);
 }
@@ -145,7 +162,7 @@ function splecheh_get_enabled_post_types(): array {
 }
 
 function splecheh_page_spell_check(): void {
-	echo '<div class="wrap"><h1>' . esc_html__( 'Spell Check', 'splecheh' ) . '</h1></div>';
+	require_once SPLECHEH_DIR . 'templates/spell-check.php';
 }
 
 function splecheh_page_help(): void {
@@ -154,4 +171,64 @@ function splecheh_page_help(): void {
 
 function splecheh_page_logs(): void {
 	require_once SPLECHEH_DIR . 'templates/logs.php';
+}
+
+function splecheh_enqueue_spellcheck_assets( string $hook ): void {
+	if ( $hook !== 'toplevel_page_splecheh' ) {
+		return;
+	}
+	wp_enqueue_script(
+		'splecheh-spellcheck',
+		plugins_url( 'assets/js/spellcheck.js', SPLECHEH_PLUGIN_FILE ),
+		[],
+		SPLECHEH_VERSION,
+		true
+	);
+	wp_localize_script(
+		'splecheh-spellcheck',
+		'splechehCheck',
+		[
+			'ajaxUrl' => admin_url( 'admin-ajax.php' ),
+			'nonce'   => wp_create_nonce( 'splecheh_run' ),
+			'i18n'    => [
+				'upToDate'   => __( 'Up to date', 'splecheh' ),
+				'viewReport' => __( 'View Report', 'splecheh' ),
+				'noErrors'   => __( 'No spelling errors found.', 'splecheh' ),
+				'errorsFound' => __( 'spelling error(s) found.', 'splecheh' ),
+			],
+		]
+	);
+}
+
+function splecheh_ajax_run_spellcheck(): void {
+	check_ajax_referer( 'splecheh_run', 'nonce' );
+
+	if ( ! current_user_can( 'edit_posts' ) ) {
+		wp_send_json_error( __( 'Insufficient permissions.', 'splecheh' ), 403 );
+	}
+
+	$post_id = isset( $_POST['post_id'] ) ? absint( $_POST['post_id'] ) : 0;
+	if ( ! $post_id ) {
+		wp_send_json_error( __( 'Invalid post ID.', 'splecheh' ), 400 );
+	}
+
+	$result = Splecheh_SpellCheckReport::run( $post_id );
+	if ( is_wp_error( $result ) ) {
+		Splecheh_Logs::addLog( 'spellcheck', 'Spell check failed for post ' . $post_id, [ 'error' => $result->get_error_message() ] );
+		wp_send_json_error( $result->get_error_message() );
+	}
+
+	Splecheh_Logs::addLog( 'spellcheck', 'Spell check completed for post ' . $post_id, [ 'errors' => count( $result['errors'] ) ] );
+
+	wp_send_json_success(
+		[
+			'post_id'             => $post_id,
+			'error_count'         => count( $result['errors'] ),
+			'report_url'          => Splecheh_SpellCheckReport::get_report_url( $post_id ),
+			'checked_at_formatted' => get_date_from_gmt(
+				gmdate( 'Y-m-d H:i:s' ),
+				get_option( 'date_format' ) . ' ' . get_option( 'time_format' )
+			),
+		]
+	);
 }
