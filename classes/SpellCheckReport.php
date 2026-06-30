@@ -17,7 +17,7 @@ class Splecheh_SpellCheckReport {
 			return new WP_Error( 'invalid_post', __( 'Post not found.', 'splecheh' ) );
 		}
 
-		$language = self::get_language();
+		$language = splecheh_get_language_code( $post_id );
 
 		// Strip HTML and decode entities for plain-text spell checking.
 		$plain_text = wp_strip_all_tags( $post->post_content );
@@ -31,6 +31,7 @@ class Splecheh_SpellCheckReport {
 			if ( is_wp_error( $errors ) ) {
 				return $errors;
 			}
+			$errors = self::filter_ignored_words( $post_id, $errors, $language );
 		}
 
 		$report = [
@@ -75,6 +76,104 @@ class Splecheh_SpellCheckReport {
 		}
 		$upload_dir = wp_upload_dir();
 		return $upload_dir['baseurl'] . '/splecheh/' . $uuid . '.json';
+	}
+
+	/**
+	 * Removes errors for words ignored for this post (post meta) or globally for its language.
+	 */
+	private static function filter_ignored_words( int $post_id, array $errors, string $language ): array {
+		$post_ignored   = (array) get_post_meta( $post_id, '_splecheh_ignored_words', true );
+		$global_ignored = Splecheh_IgnoreList::get_words( $language );
+		$ignored        = array_map( 'mb_strtolower', array_merge( $post_ignored, $global_ignored ) );
+
+		if ( empty( $ignored ) ) {
+			return $errors;
+		}
+
+		return array_values(
+			array_filter(
+				$errors,
+				function ( $error ) use ( $ignored ) {
+					return ! in_array( mb_strtolower( $error['word'] ), $ignored, true );
+				}
+			)
+		);
+	}
+
+	/**
+	 * Returns the absolute filesystem path to a post's saved report JSON, or empty string if none.
+	 */
+	public static function get_report_path( int $post_id ): string {
+		$uuid = get_post_meta( $post_id, '_splecheh_report_uuid', true );
+		if ( ! $uuid ) {
+			return '';
+		}
+		$upload_dir = wp_upload_dir();
+		return $upload_dir['basedir'] . '/splecheh/' . $uuid . '.json';
+	}
+
+	/**
+	 * Reads and decodes a post's saved report JSON.
+	 */
+	public static function get_report( int $post_id ): ?array {
+		$path = self::get_report_path( $post_id );
+		if ( ! $path || ! file_exists( $path ) ) {
+			return null;
+		}
+		$data = json_decode( (string) file_get_contents( $path ), true );
+		return is_array( $data ) ? $data : null;
+	}
+
+	/**
+	 * Overwrites a post's saved report JSON in place (does not change the report's UUID or checked-at meta).
+	 */
+	public static function update_report( int $post_id, array $report ): bool {
+		$path = self::get_report_path( $post_id );
+		if ( ! $path ) {
+			return false;
+		}
+		$json = wp_json_encode( $report, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE );
+		return file_put_contents( $path, $json ) !== false;
+	}
+
+	/**
+	 * Counts the unresolved issues in a post's saved report.
+	 */
+	public static function count_unresolved( int $post_id ): int {
+		$report = self::get_report( $post_id );
+		if ( ! $report || empty( $report['errors'] ) ) {
+			return 0;
+		}
+		$count = 0;
+		foreach ( $report['errors'] as $error ) {
+			if ( empty( $error['resolved'] ) ) {
+				$count++;
+			}
+		}
+		return $count;
+	}
+
+	/**
+	 * Replaces the specific occurrence of $word found inside $excerpt within $content.
+	 * Falls back to the first whole-word occurrence in $content if the excerpt can't be located
+	 * (e.g. it was extracted from stripped/decoded text and no longer matches the raw HTML).
+	 */
+	public static function replace_occurrence( string $content, string $word, string $excerpt, string $replacement ): string {
+		$pattern = '/\b' . preg_quote( $word, '/' ) . '\b/ui';
+
+		if ( $excerpt !== '' ) {
+			$pos = mb_stripos( $content, $excerpt );
+			if ( $pos !== false ) {
+				$segment     = mb_substr( $content, $pos, mb_strlen( $excerpt ) );
+				$new_segment = preg_replace( $pattern, $replacement, $segment, 1 );
+				if ( $new_segment !== null && $new_segment !== $segment ) {
+					return mb_substr( $content, 0, $pos ) . $new_segment . mb_substr( $content, $pos + mb_strlen( $excerpt ) );
+				}
+			}
+		}
+
+		$result = preg_replace( $pattern, $replacement, $content, 1 );
+		return $result !== null ? $result : $content;
 	}
 
 	/**

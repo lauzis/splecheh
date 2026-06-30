@@ -21,6 +21,14 @@ Built with the assistance of [CodeRabbit](https://coderabbit.ai) for code review
 
 ## Change log
 
+### --- 0.5.0 ---
+- "Details (N)" button added to each row of the Spell Check table, linking (in a new tab) to a per-post Spell Check Details page; N is the count of unresolved issues from the post's report.
+- Spell Check Details page lists each issue (word, sentence excerpt, editable replacement) with row actions: Fix (search-and-replace the specific occurrence), Ignore in post, and Ignore always — plus a bulk-action dropdown to apply any of the three to multiple selected issues at once.
+- Fix/Ignore actions mark the issue resolved in the saved report JSON; no forced re-check, consistent with the existing outdated-detection / manual "Run Now" flow.
+- New Settings > Ignore List page lists and removes globally-ignored words, scoped per language.
+- `splecheh_get_language_code( $post_id )` helper added: resolves a post's language via Polylang, then WPML, then the plugin's Settings language / site locale fallback. Used for per-post spell check language and for scoping the global ignore list.
+- Spell check now skips words ignored for the specific post (post meta) or globally ignored for the post's language.
+
 ### --- 0.4.0 ---
 - Background spell check: enable/disable toggle, configurable schedule interval (1 min – 24 h), and configurable batch size (default 50) added to Settings page.
 - Custom WP-Cron schedules registered for all supported intervals; cron event is automatically registered/deregistered when settings change.
