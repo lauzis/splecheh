@@ -72,9 +72,14 @@ class Splecheh_SpellCheckReport {
 			$content = self::strip_shortcodes( $content );
 		}
 
+		// Replace block-level closing tags and <br> with a space before stripping tags,
+		// otherwise wp_strip_all_tags() removes them and merges adjoining sentences/paragraphs
+		// into a single word (e.g. "sakāmo.</p><p>Var" becomes "sakāmo.Var").
+		$content = preg_replace( '#</(?:p|div|li|ul|ol|h[1-6]|blockquote|section|article|tr|table)\s*>|<br\s*/?>#i', ' ', $content );
+
 		$text = wp_strip_all_tags( $content );
 		$text = html_entity_decode( $text, ENT_QUOTES | ENT_HTML5, 'UTF-8' );
-		return trim( $text );
+		return trim( preg_replace( '/\s+/u', ' ', $text ) );
 	}
 
 	/**
