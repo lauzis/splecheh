@@ -41,6 +41,10 @@ Run `composer install` to pull in dev dependencies (PHPUnit), then `composer tes
 
 ## Change log
 
+### --- 0.16.0 ---
+- Added an "Issues" column to the Spell Check table showing each post's unresolved issue count, sortable so posts can be ordered by how many issues they have.
+- The unresolved issue count is now stored in a `_splecheh_issue_count` post meta field, kept in sync whenever a report is written (manual/bulk/Details re-run, background cron) or an issue is resolved via Fix/Ignore. Posts checked before this field existed show "—" until rechecked, the same as posts that have never been checked.
+
 ### --- 0.15.0 ---
 - Added a "Re-run Spell Check" bulk action to the Spell Check table: select rows via the new checkbox column and re-run the check for all of them at once, with each row's status/report/details links updating in place when done.
 - Bulk runs are logged (start/completion, including failure counts) consistent with existing logging for manual and cron-triggered checks.

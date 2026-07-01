@@ -27,6 +27,7 @@ class Splecheh_SpellCheckListTable extends WP_List_Table {
 			'post_type'    => __( 'Post Type', 'splecheh' ),
 			'last_checked' => __( 'Last Checked', 'splecheh' ),
 			'status'       => __( 'Status', 'splecheh' ),
+			'issues'       => __( 'Issues', 'splecheh' ),
 			'report'       => __( 'Report', 'splecheh' ),
 			'details'      => __( 'Details', 'splecheh' ),
 			'actions'      => __( 'Actions', 'splecheh' ),
@@ -37,6 +38,7 @@ class Splecheh_SpellCheckListTable extends WP_List_Table {
 		return [
 			'title'        => [ 'post_title', false ],
 			'last_checked' => [ 'last_checked', false ],
+			'issues'       => [ 'issues', true ],
 		];
 	}
 
@@ -68,15 +70,30 @@ class Splecheh_SpellCheckListTable extends WP_List_Table {
 		$per_page = 20;
 		$paged    = $this->get_pagenum();
 		$search   = sanitize_text_field( wp_unslash( $_GET['s'] ?? '' ) );
+		$orderby  = sanitize_key( wp_unslash( $_GET['orderby'] ?? '' ) );
+		$order    = strtoupper( sanitize_key( wp_unslash( $_GET['order'] ?? '' ) ) ) === 'DESC' ? 'DESC' : 'ASC';
 
 		$args = [
 			'post_type'      => $post_types,
 			'post_status'    => 'publish',
 			'posts_per_page' => $per_page,
 			'paged'          => $paged,
-			'orderby'        => 'title',
-			'order'          => 'ASC',
+			'order'          => $order,
 		];
+
+		switch ( $orderby ) {
+			case 'issues':
+				$args['meta_key'] = '_splecheh_issue_count';
+				$args['orderby']  = 'meta_value_num';
+				break;
+			case 'last_checked':
+				$args['meta_key'] = '_splecheh_checked_at';
+				$args['orderby']  = 'meta_value';
+				break;
+			default:
+				$args['orderby'] = 'title';
+				break;
+		}
 
 		if ( ! empty( $search ) ) {
 			$args['s'] = $search;
@@ -118,6 +135,9 @@ class Splecheh_SpellCheckListTable extends WP_List_Table {
 			case 'status':
 				return $this->column_status( $item );
 
+			case 'issues':
+				return $this->column_issues( $item );
+
 			case 'report':
 				return $this->column_report( $item );
 
@@ -148,6 +168,17 @@ class Splecheh_SpellCheckListTable extends WP_List_Table {
 			return '<span class="splecheh-badge splecheh-badge--outdated">' . esc_html__( 'Outdated', 'splecheh' ) . '</span>';
 		}
 		return '<span class="splecheh-badge splecheh-badge--current">' . esc_html__( 'Up to date', 'splecheh' ) . '</span>';
+	}
+
+	/**
+	 * Shows the stored unresolved issue count. Missing meta (never checked, or checked
+	 * before this field existed) is treated the same as "never checked" rather than as 0.
+	 */
+	protected function column_issues( WP_Post $item ): string {
+		if ( ! metadata_exists( 'post', $item->ID, '_splecheh_issue_count' ) ) {
+			return '&mdash;';
+		}
+		return esc_html( (string) get_post_meta( $item->ID, '_splecheh_issue_count', true ) );
 	}
 
 	protected function column_report( WP_Post $item ): string {
