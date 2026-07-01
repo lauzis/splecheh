@@ -41,6 +41,10 @@ Run `composer install` to pull in dev dependencies (PHPUnit), then `composer tes
 
 ## Change log
 
+### --- 0.12.0 ---
+- Added a "Re-run Spell Check" button to the Spell Check Details page; it re-runs the check for that post and refreshes the issues list in place, without leaving the page.
+- The Details page re-run reuses the same spell check logic and missing-Aspell-wordlist error handling as the Spell Check table's "Run Now"/"Re-run" button.
+
 ### --- 0.11.0 ---
 - Fixed spell check false positives at paragraph/element boundaries: `prepare_text()` now replaces block-level closing tags (`</p>`, `</div>`, `</li>`, etc.) and `<br>` with a space before stripping HTML, so adjoining sentences (e.g. across `<p>` tags) are no longer merged into a single word.
 

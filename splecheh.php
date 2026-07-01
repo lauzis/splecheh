@@ -3,7 +3,7 @@
  * Plugin Name: Splecheh - WordPress spellcheck plugin
  * Plugin URI:  https://github.com/lauzis/splecheh
  * Description: Run spell check on all articles and post types to find spelling errors.
- * Version:     0.11.0
+ * Version:     0.12.0
  * Author:      Aivars Lauzis
  * Text Domain: splecheh
  * License:     MIT
@@ -14,7 +14,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'SPLECHEH_VERSION', '0.11.0' );
+define( 'SPLECHEH_VERSION', '0.12.0' );
 define( 'SPLECHEH_DIR', plugin_dir_path( __FILE__ ) );
 define( 'SPLECHEH_LOG_PATH', SPLECHEH_DIR . 'logs' );
 define( 'SPLECHEH_PLUGIN_FILE', __FILE__ );
@@ -83,6 +83,7 @@ add_action( 'admin_enqueue_scripts', 'splecheh_enqueue_details_assets' );
 add_action( 'wp_ajax_splecheh_dismiss_notification', [ 'Splecheh_NotificationManager', 'handle_dismiss' ] );
 add_action( 'wp_ajax_splecheh_run', 'splecheh_ajax_run_spellcheck' );
 add_action( 'wp_ajax_splecheh_run_now', 'splecheh_ajax_run_now' );
+add_action( 'wp_ajax_splecheh_details_rerun', 'splecheh_ajax_details_rerun' );
 add_action( 'wp_ajax_splecheh_fix_word', 'splecheh_ajax_fix_word' );
 add_action( 'wp_ajax_splecheh_ignore_in_post', 'splecheh_ajax_ignore_in_post' );
 add_action( 'wp_ajax_splecheh_ignore_always', 'splecheh_ajax_ignore_always' );
@@ -362,9 +363,36 @@ function splecheh_enqueue_details_assets(): void {
 				'resolved'       => __( 'Resolved', 'splecheh' ),
 				'issuesFixed'    => __( 'issue(s) fixed.', 'splecheh' ),
 				'issuesUpdated'  => __( 'issue(s) updated.', 'splecheh' ),
+				'rerun'          => __( 'Re-run Spell Check', 'splecheh' ),
+				'rerunning'      => __( 'Running…', 'splecheh' ),
+				'noIssues'       => __( 'No spelling issues found.', 'splecheh' ),
+				'issuesFound'    => __( 'spelling issue(s) found.', 'splecheh' ),
+				'fix'            => __( 'Fix', 'splecheh' ),
+				'ignoreInPost'   => __( 'Ignore in post', 'splecheh' ),
+				'ignoreAlways'   => __( 'Ignore always', 'splecheh' ),
 			],
 		]
 	);
+}
+
+/**
+ * Runs the spell check for a single post and logs the outcome. Shared by the
+ * per-row "Run Now"/"Re-run" action and the Details page's re-run button.
+ *
+ * @return array|WP_Error Report array on success, WP_Error on failure.
+ */
+function splecheh_run_spellcheck_for_post( int $post_id ) {
+	Splecheh_Logs::addLog( 'spellcheck', 'Spell check started for post ' . $post_id, [] );
+
+	$result = Splecheh_SpellCheckReport::run( $post_id );
+	if ( is_wp_error( $result ) ) {
+		Splecheh_Logs::addLog( 'spellcheck', 'Spell check failed for post ' . $post_id, [ 'error' => $result->get_error_message() ] );
+		return $result;
+	}
+
+	Splecheh_Logs::addLog( 'spellcheck', 'Spell check completed for post ' . $post_id, [ 'errors' => count( $result['errors'] ) ] );
+
+	return $result;
 }
 
 function splecheh_ajax_run_spellcheck(): void {
@@ -379,11 +407,8 @@ function splecheh_ajax_run_spellcheck(): void {
 		wp_send_json_error( __( 'Invalid post ID.', 'splecheh' ), 400 );
 	}
 
-	Splecheh_Logs::addLog( 'spellcheck', 'Spell check started for post ' . $post_id, [] );
-
-	$result = Splecheh_SpellCheckReport::run( $post_id );
+	$result = splecheh_run_spellcheck_for_post( $post_id );
 	if ( is_wp_error( $result ) ) {
-		Splecheh_Logs::addLog( 'spellcheck', 'Spell check failed for post ' . $post_id, [ 'error' => $result->get_error_message() ] );
 		wp_send_json_error(
 			[
 				'message'  => $result->get_error_message(),
@@ -391,8 +416,6 @@ function splecheh_ajax_run_spellcheck(): void {
 			]
 		);
 	}
-
-	Splecheh_Logs::addLog( 'spellcheck', 'Spell check completed for post ' . $post_id, [ 'errors' => count( $result['errors'] ) ] );
 
 	require_once SPLECHEH_DIR . 'classes/SpellCheckListTable.php';
 
@@ -406,6 +429,31 @@ function splecheh_ajax_run_spellcheck(): void {
 				gmdate( 'Y-m-d H:i:s' ),
 				get_option( 'date_format' ) . ' ' . get_option( 'time_format' )
 			),
+		]
+	);
+}
+
+function splecheh_ajax_details_rerun(): void {
+	check_ajax_referer( 'splecheh_details', 'nonce' );
+
+	$post_id = isset( $_POST['post_id'] ) ? absint( $_POST['post_id'] ) : 0;
+	if ( ! $post_id || ! current_user_can( 'edit_post', $post_id ) ) {
+		wp_send_json_error( __( 'Insufficient permissions.', 'splecheh' ), 403 );
+	}
+
+	$result = splecheh_run_spellcheck_for_post( $post_id );
+	if ( is_wp_error( $result ) ) {
+		wp_send_json_error(
+			[
+				'message'  => $result->get_error_message(),
+				'docs_url' => (string) ( $result->get_error_data( 'missing_wordlist' )['docs_url'] ?? '' ),
+			]
+		);
+	}
+
+	wp_send_json_success(
+		[
+			'errors' => Splecheh_SpellCheckReport::format_errors_for_details( $result['errors'] ),
 		]
 	);
 }
