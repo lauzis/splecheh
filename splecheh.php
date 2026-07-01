@@ -3,7 +3,7 @@
  * Plugin Name: Splecheh - WordPress spellcheck plugin
  * Plugin URI:  https://github.com/lauzis/splecheh
  * Description: Run spell check on all articles and post types to find spelling errors.
- * Version:     0.6.0
+ * Version:     0.7.0
  * Author:      Aivars Lauzis
  * Text Domain: splecheh
  * License:     MIT
@@ -14,7 +14,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'SPLECHEH_VERSION', '0.6.0' );
+define( 'SPLECHEH_VERSION', '0.7.0' );
 define( 'SPLECHEH_DIR', plugin_dir_path( __FILE__ ) );
 define( 'SPLECHEH_LOG_PATH', SPLECHEH_DIR . 'logs' );
 define( 'SPLECHEH_PLUGIN_FILE', __FILE__ );
@@ -123,14 +123,16 @@ function splecheh_register_menu(): void {
 		'splecheh_page_help'
 	);
 
-	add_submenu_page(
-		'splecheh',
-		__( 'Logs', 'splecheh' ),
-		__( 'Logs', 'splecheh' ),
-		'edit_posts',
-		'splecheh-logs',
-		'splecheh_page_logs'
-	);
+	if ( splecheh_logs_enabled() ) {
+		add_submenu_page(
+			'splecheh',
+			__( 'Logs', 'splecheh' ),
+			__( 'Logs', 'splecheh' ),
+			'edit_posts',
+			'splecheh-logs',
+			'splecheh_page_logs'
+		);
+	}
 
 	add_submenu_page(
 		'splecheh',
@@ -211,8 +213,25 @@ function splecheh_register_settings_fields(): void {
 				\Carbon_Fields\Field::make( 'text', 'splecheh_bg_batch_size', __( 'Batch Size', 'splecheh' ) )
 					->set_default_value( '50' )
 					->set_help_text( __( 'Number of posts to check per background run. Default: 50.', 'splecheh' ) ),
+
+				\Carbon_Fields\Field::make( 'separator', 'splecheh_logs_separator', __( 'Logs', 'splecheh' ) ),
+
+				\Carbon_Fields\Field::make( 'checkbox', 'splecheh_logs_enabled', __( 'Enable Logs', 'splecheh' ) )
+					->set_default_value( true )
+					->set_help_text( __( 'When disabled, no new log entries are written and the Logs page is hidden from the menu.', 'splecheh' ) ),
 			]
 		);
+}
+
+/**
+ * Whether logging is enabled.
+ * Defaults to enabled when Carbon Fields isn't loaded yet.
+ */
+function splecheh_logs_enabled(): bool {
+	if ( ! function_exists( 'carbon_get_theme_option' ) ) {
+		return true;
+	}
+	return (bool) carbon_get_theme_option( 'splecheh_logs_enabled' );
 }
 
 /**

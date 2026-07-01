@@ -21,6 +21,9 @@ Built with the assistance of [CodeRabbit](https://coderabbit.ai) for code review
 
 ## Change log
 
+### --- 0.7.0 ---
+- Added an "Enable Logs" setting (Settings page); disabling it stops new log entries from being written and hides the Logs submenu/page entirely.
+
 ### --- 0.6.0 ---
 - Fixed the Spell Check table's Actions column rendering empty: `column_status`, `column_report`, `column_details`, and `column_actions` were declared `private`, which broke `WP_List_Table`'s automatic `column_<name>` dispatch (fatal on PHP 8). Changed to `protected`.
 - Actions column now shows a "Run Now" / "Re-run" button per row, plus — once a report exists — links to the report JSON and the Spell Check Details page; updates in place after an AJAX run completes.

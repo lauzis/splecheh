@@ -18,6 +18,9 @@ class Splecheh_Logs {
 	}
 
 	public static function addLog( string $action, string $message, array $context = [] ): void {
+		if ( function_exists( 'splecheh_logs_enabled' ) && ! splecheh_logs_enabled() ) {
+			return;
+		}
 		if ( ! self::ensure_log_dir() ) {
 			return;
 		}
