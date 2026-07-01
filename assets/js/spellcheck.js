@@ -32,7 +32,18 @@
 					if (!data.success) {
 						if (msg) {
 							msg.className = 'notice notice-error is-dismissible';
-							msg.querySelector('p').textContent = data.data || 'Spell check failed.';
+							var errData = data.data || {};
+							var p = msg.querySelector('p');
+							p.textContent = (typeof errData === 'string' ? errData : errData.message) || 'Spell check failed.';
+							if (errData.docs_url) {
+								var link = document.createElement('a');
+								link.href = errData.docs_url;
+								link.target = '_blank';
+								link.rel = 'noopener';
+								link.textContent = 'Learn more';
+								p.appendChild(document.createTextNode(' '));
+								p.appendChild(link);
+							}
 							msg.style.display = 'block';
 						}
 						return;

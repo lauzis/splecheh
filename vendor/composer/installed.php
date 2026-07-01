@@ -3,11 +3,11 @@
         'name' => 'lauzis/splecheh',
         'pretty_version' => 'dev-develop',
         'version' => 'dev-develop',
-        'reference' => '8b4d23f5ca031d56c009a6bd0307c4db3c38f8fd',
+        'reference' => '3c02e74fe2ecb4a4960ab04c7d76a8c1e8136575',
         'type' => 'wordpress-plugin',
         'install_path' => __DIR__ . '/../../',
         'aliases' => array(),
-        'dev' => true,
+        'dev' => false,
     ),
     'versions' => array(
         'htmlburger/carbon-fields' => array(
@@ -22,7 +22,7 @@
         'lauzis/splecheh' => array(
             'pretty_version' => 'dev-develop',
             'version' => 'dev-develop',
-            'reference' => '8b4d23f5ca031d56c009a6bd0307c4db3c38f8fd',
+            'reference' => '3c02e74fe2ecb4a4960ab04c7d76a8c1e8136575',
             'type' => 'wordpress-plugin',
             'install_path' => __DIR__ . '/../../',
             'aliases' => array(),
