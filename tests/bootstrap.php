@@ -10,6 +10,7 @@
 require dirname( __DIR__ ) . '/vendor/autoload.php';
 
 define( 'ABSPATH', __DIR__ . '/' );
+define( 'SPLECHEH_VERSION', '0.14.0-test' );
 
 if ( ! function_exists( '__' ) ) {
 	function __( string $text, string $domain = 'default' ): string {
@@ -68,6 +69,47 @@ if ( ! class_exists( 'WP_Error' ) ) {
 			}
 			return $this->error_data[ $code ] ?? null;
 		}
+	}
+}
+
+if ( ! function_exists( 'get_post_meta' ) ) {
+	function get_post_meta( int $post_id, string $key, bool $single = false ) {
+		return $GLOBALS['__splecheh_test_post_meta'][ $post_id ][ $key ] ?? ( $single ? '' : [] );
+	}
+}
+
+if ( ! function_exists( 'update_post_meta' ) ) {
+	function update_post_meta( int $post_id, string $key, $value ): bool {
+		$GLOBALS['__splecheh_test_post_meta'][ $post_id ][ $key ] = $value;
+		return true;
+	}
+}
+
+if ( ! function_exists( 'wp_upload_dir' ) ) {
+	function wp_upload_dir(): array {
+		return [
+			'basedir' => sys_get_temp_dir() . '/splecheh-tests',
+			'baseurl' => 'http://example.test/wp-content/uploads',
+			'error'   => false,
+		];
+	}
+}
+
+if ( ! function_exists( 'wp_mkdir_p' ) ) {
+	function wp_mkdir_p( string $dir ): bool {
+		return is_dir( $dir ) || mkdir( $dir, 0777, true );
+	}
+}
+
+if ( ! function_exists( 'wp_generate_uuid4' ) ) {
+	function wp_generate_uuid4(): string {
+		return sprintf( 'test-uuid-%s', bin2hex( random_bytes( 8 ) ) );
+	}
+}
+
+if ( ! function_exists( 'wp_json_encode' ) ) {
+	function wp_json_encode( $data, int $options = 0 ) {
+		return json_encode( $data, $options );
 	}
 }
 

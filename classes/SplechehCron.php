@@ -128,6 +128,28 @@ class Splecheh_Cron {
 	}
 
 	/**
+	 * Builds the JOIN/condition/params needed to also treat a report as outdated
+	 * when its stored plugin version differs from the current one, if that
+	 * setting is enabled. Returns empty pieces (no-op) when it's disabled, so
+	 * queries are unaffected and default to date-only comparison.
+	 *
+	 * @return array{join: string, condition: string, params: array}
+	 */
+	private static function version_check_sql_parts(): array {
+		if ( ! splecheh_invalidate_on_version_change_enabled() ) {
+			return [ 'join' => '', 'condition' => '', 'params' => [] ];
+		}
+
+		global $wpdb;
+
+		return [
+			'join'      => "LEFT JOIN {$wpdb->postmeta} pmv ON pmv.post_id = p.ID AND pmv.meta_key = '_splecheh_version'",
+			'condition' => ' OR pmv.meta_value IS NULL OR pmv.meta_value != %s',
+			'params'    => [ SPLECHEH_VERSION ],
+		];
+	}
+
+	/**
 	 * Returns IDs of posts that have never been checked or are outdated.
 	 *
 	 * @param string[] $post_types
@@ -137,7 +159,8 @@ class Splecheh_Cron {
 		global $wpdb;
 
 		$placeholders = implode( ',', array_fill( 0, count( $post_types ), '%s' ) );
-		$params       = array_merge( $post_types, [ $limit ] );
+		$version      = self::version_check_sql_parts();
+		$params       = array_merge( $post_types, $version['params'], [ $limit ] );
 
 		// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		$sql = $wpdb->prepare(
@@ -145,9 +168,10 @@ class Splecheh_Cron {
 			 FROM {$wpdb->posts} p
 			 LEFT JOIN {$wpdb->postmeta} pm
 			     ON pm.post_id = p.ID AND pm.meta_key = '_splecheh_checked_at'
+			 {$version['join']}
 			 WHERE p.post_type IN ($placeholders)
 			   AND p.post_status = 'publish'
-			   AND (pm.meta_value IS NULL OR p.post_modified_gmt > pm.meta_value)
+			   AND (pm.meta_value IS NULL OR p.post_modified_gmt > pm.meta_value{$version['condition']})
 			 ORDER BY p.post_modified ASC
 			 LIMIT %d",
 			...$params
@@ -166,6 +190,8 @@ class Splecheh_Cron {
 		global $wpdb;
 
 		$placeholders = implode( ',', array_fill( 0, count( $post_types ), '%s' ) );
+		$version      = self::version_check_sql_parts();
+		$params       = array_merge( $post_types, $version['params'] );
 
 		// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		$sql = $wpdb->prepare(
@@ -173,10 +199,11 @@ class Splecheh_Cron {
 			 FROM {$wpdb->posts} p
 			 LEFT JOIN {$wpdb->postmeta} pm
 			     ON pm.post_id = p.ID AND pm.meta_key = '_splecheh_checked_at'
+			 {$version['join']}
 			 WHERE p.post_type IN ($placeholders)
 			   AND p.post_status = 'publish'
-			   AND (pm.meta_value IS NULL OR p.post_modified_gmt > pm.meta_value)",
-			...$post_types
+			   AND (pm.meta_value IS NULL OR p.post_modified_gmt > pm.meta_value{$version['condition']})",
+			...$params
 		);
 		// phpcs:enable
 
