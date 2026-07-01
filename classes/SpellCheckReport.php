@@ -181,16 +181,24 @@ class Splecheh_SpellCheckReport {
 	 *
 	 * @return array|WP_Error
 	 */
-	private static function spellcheck( string $text, string $language ) {
+	private static function spellcheck( string $text, string $language, ?\PhpSpellcheck\Spellchecker\SpellcheckerInterface $checker = null ) {
 		try {
-			if ( extension_loaded( 'pspell' ) ) {
-				$checker = new \PhpSpellcheck\Spellchecker\PHPPspell();
-			} else {
-				$checker = \PhpSpellcheck\Spellchecker\Aspell::create();
+			if ( ! $checker ) {
+				$checker = extension_loaded( 'pspell' )
+					? new \PhpSpellcheck\Spellchecker\PHPPspell()
+					: \PhpSpellcheck\Spellchecker\Aspell::create();
 			}
+
+			if ( ! self::is_language_available( $checker, $language ) ) {
+				return self::missing_wordlist_error( $language );
+			}
+
 			$finder       = new \PhpSpellcheck\MisspellingFinder( $checker );
 			$misspellings = $finder->find( $text, [ $language ] );
 		} catch ( \Throwable $e ) {
+			if ( stripos( $e->getMessage(), 'word list' ) !== false ) {
+				return self::missing_wordlist_error( $language );
+			}
 			return new WP_Error( 'spellcheck_failed', $e->getMessage() );
 		}
 
@@ -211,6 +219,43 @@ class Splecheh_SpellCheckReport {
 		}
 
 		return $errors;
+	}
+
+	/**
+	 * Checks whether the checker has a wordlist installed for $language.
+	 */
+	private static function is_language_available( \PhpSpellcheck\Spellchecker\SpellcheckerInterface $checker, string $language ): bool {
+		$language = strtolower( $language );
+		foreach ( $checker->getSupportedLanguages() as $supported ) {
+			$supported = strtolower( $supported );
+			if ( $supported === $language || strpos( $supported, $language . '_' ) === 0 || strpos( $supported, $language . '-' ) === 0 ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Builds the friendly error shown when no wordlist is installed for a language:
+	 * states the missing language, the install command, and a deep link to the docs.
+	 */
+	private static function missing_wordlist_error( string $language ): WP_Error {
+		$docs_url = 'https://github.com/lauzis/splecheh#aspell-dependency';
+		$message  = sprintf(
+			/* translators: 1: language code, 2: apt-get install command, 3: documentation URL */
+			__( 'No spellcheck word list is installed for language "%1$s". Install it with: %2$s — see %3$s for details.', 'splecheh' ),
+			$language,
+			sprintf( 'sudo apt-get update && sudo apt-get install aspell-%s', $language ),
+			$docs_url
+		);
+		return new WP_Error(
+			'missing_wordlist',
+			$message,
+			[
+				'language' => $language,
+				'docs_url' => $docs_url,
+			]
+		);
 	}
 
 	/**

@@ -11,6 +11,24 @@ Editors and content managers who need to maintain writing quality across a WordP
 - Lists all spellcheck issues in a central admin view.
 - Admin menu accessible to editors (and above).
 
+## Aspell dependency
+Spell checking is performed by [`tigitz/php-spellchecker`](https://github.com/tigitz/php-spellchecker), which shells out to the system `aspell` command (or uses the PHP `pspell` extension, when installed, which is itself backed by Aspell). Each language needs its own Aspell wordlist package installed on the server — it is **not** bundled with the plugin or with Aspell itself.
+
+If a post's language has no wordlist installed, spell checking fails with an error like:
+
+```
+No word lists can be found for the language "lv".
+```
+
+Splecheh detects this before running the check and shows a message naming the missing language and the command to fix it, instead of a raw error. To install a wordlist (replace `lv` with the language code shown in the message):
+
+```
+sudo apt-get update
+sudo apt-get install aspell-<language-code>
+```
+
+For example, `sudo apt-get install aspell-lv` installs the Latvian dictionary. Available packages vary by OS; on Debian/Ubuntu, search with `apt-cache search aspell-`.
+
 ## Support
 This is a free, open-source plugin. Support is limited and provided on a best-effort basis.
 
@@ -19,7 +37,13 @@ The plugin is built for specific project needs. There is no guarantee it will wo
 ## Development
 Built with the assistance of [CodeRabbit](https://coderabbit.ai) for code review and [Claude Code](https://claude.ai/code) for implementation.
 
+Run `composer install` to pull in dev dependencies (PHPUnit), then `composer test` to run the test suite. The committed `vendor/` folder is production-only (no dev dependencies), so the plugin works as-is without running Composer.
+
 ## Change log
+
+### --- 0.8.0 ---
+- Spell check now detects a missing Aspell wordlist for the post's language before running, and returns a friendly error naming the language, the `aspell-<language-code>` install command, and a link to the new "Aspell dependency" README section, instead of a raw process exception.
+- Added an "Aspell dependency" section to the README documenting that spell checking relies on system Aspell wordlists per language.
 
 ### --- 0.7.0 ---
 - Added an "Enable Logs" setting (Settings page); disabling it stops new log entries from being written and hides the Logs submenu/page entirely.
