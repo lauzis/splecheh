@@ -41,6 +41,9 @@ Run `composer install` to pull in dev dependencies (PHPUnit), then `composer tes
 
 ## Change log
 
+### --- 0.9.0 ---
+- Added an "Ignore Shortcodes" setting (Settings page), enabled by default; when on, shortcode literals (e.g. `[shortcode attr="value"]` or `[shortcode]content[/shortcode]`) are excluded from spell checking instead of being flagged as misspellings.
+
 ### --- 0.8.0 ---
 - Spell check now detects a missing Aspell wordlist for the post's language before running, and returns a friendly error naming the language, the `aspell-<language-code>` install command, and a link to the new "Aspell dependency" README section, instead of a raw process exception.
 - Added an "Aspell dependency" section to the README documenting that spell checking relies on system Aspell wordlists per language.

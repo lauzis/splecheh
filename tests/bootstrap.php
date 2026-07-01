@@ -23,6 +23,17 @@ if ( ! function_exists( 'is_wp_error' ) ) {
 	}
 }
 
+if ( ! function_exists( 'wp_strip_all_tags' ) ) {
+	function wp_strip_all_tags( string $string, bool $remove_breaks = false ): string {
+		$string = preg_replace( '/<(script|style)[^>]*?>.*?<\/\\1>/si', '', $string ) ?? $string;
+		$string = strip_tags( $string );
+		if ( $remove_breaks ) {
+			$string = preg_replace( '/[\r\n\t ]+/', ' ', $string ) ?? $string;
+		}
+		return trim( $string );
+	}
+}
+
 if ( ! class_exists( 'WP_Error' ) ) {
 	class WP_Error {
 		private array $errors     = [];
