@@ -41,6 +41,9 @@ Run `composer install` to pull in dev dependencies (PHPUnit), then `composer tes
 
 ## Change log
 
+### --- 0.11.0 ---
+- Fixed spell check false positives at paragraph/element boundaries: `prepare_text()` now replaces block-level closing tags (`</p>`, `</div>`, `</li>`, etc.) and `<br>` with a space before stripping HTML, so adjoining sentences (e.g. across `<p>` tags) are no longer merged into a single word.
+
 ### --- 0.10.0 ---
 - Spell Check Details page now renders the flagged word in **bold** within the sentence excerpt, making it easier to spot at a glance.
 
