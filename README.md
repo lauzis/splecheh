@@ -21,6 +21,11 @@ Built with the assistance of [CodeRabbit](https://coderabbit.ai) for code review
 
 ## Change log
 
+### --- 0.6.0 ---
+- Fixed the Spell Check table's Actions column rendering empty: `column_status`, `column_report`, `column_details`, and `column_actions` were declared `private`, which broke `WP_List_Table`'s automatic `column_<name>` dispatch (fatal on PHP 8). Changed to `protected`.
+- Actions column now shows a "Run Now" / "Re-run" button per row, plus — once a report exists — links to the report JSON and the Spell Check Details page; updates in place after an AJAX run completes.
+- Added start/failure logging for the manual per-row spell check and the WP-Cron background batch (including skip reasons: already running, no post types enabled), to make silent no-ops diagnosable.
+
 ### --- 0.5.0 ---
 - "Details (N)" button added to each row of the Spell Check table, linking (in a new tab) to a per-post Spell Check Details page; N is the count of unresolved issues from the post's report.
 - Spell Check Details page lists each issue (word, sentence excerpt, editable replacement) with row actions: Fix (search-and-replace the specific occurrence), Ignore in post, and Ignore always — plus a bulk-action dropdown to apply any of the three to multiple selected issues at once.

@@ -71,7 +71,10 @@ class Splecheh_Cron {
 	 * Skips if a previous batch is still running (transient lock).
 	 */
 	public static function run_batch(): void {
+		Splecheh_Logs::addLog( 'cron', 'BG spell check triggered.', [] );
+
 		if ( get_transient( self::LOCK_KEY ) ) {
+			Splecheh_Logs::addLog( 'cron', 'BG spell check skipped: a previous run is still in progress.', [] );
 			return;
 		}
 		set_transient( self::LOCK_KEY, 1, 5 * MINUTE_IN_SECONDS );
@@ -81,6 +84,7 @@ class Splecheh_Cron {
 			$enabled_types = splecheh_get_enabled_post_types();
 
 			if ( empty( $enabled_types ) ) {
+				Splecheh_Logs::addLog( 'cron', 'BG spell check skipped: no post types enabled.', [] );
 				return;
 			}
 
@@ -89,7 +93,9 @@ class Splecheh_Cron {
 
 			foreach ( $post_ids as $post_id ) {
 				$result = Splecheh_SpellCheckReport::run( $post_id );
-				if ( ! is_wp_error( $result ) ) {
+				if ( is_wp_error( $result ) ) {
+					Splecheh_Logs::addLog( 'cron', "BG spell check failed for post {$post_id}", [ 'error' => $result->get_error_message() ] );
+				} else {
 					$issues_found += count( $result['errors'] );
 				}
 			}

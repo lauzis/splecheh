@@ -116,7 +116,7 @@ class Splecheh_SpellCheckListTable extends WP_List_Table {
 		return '';
 	}
 
-	private function column_status( WP_Post $item ): string {
+	protected function column_status( WP_Post $item ): string {
 		$checked_at = get_post_meta( $item->ID, '_splecheh_checked_at', true );
 		if ( ! $checked_at ) {
 			return '<span class="splecheh-badge splecheh-badge--never">' . esc_html__( 'Never checked', 'splecheh' ) . '</span>';
@@ -129,7 +129,7 @@ class Splecheh_SpellCheckListTable extends WP_List_Table {
 		return '<span class="splecheh-badge splecheh-badge--current">' . esc_html__( 'Up to date', 'splecheh' ) . '</span>';
 	}
 
-	private function column_report( WP_Post $item ): string {
+	protected function column_report( WP_Post $item ): string {
 		$url = Splecheh_SpellCheckReport::get_report_url( $item->ID );
 		if ( ! $url ) {
 			return '&mdash;';
@@ -137,7 +137,7 @@ class Splecheh_SpellCheckListTable extends WP_List_Table {
 		return '<a href="' . esc_url( $url ) . '" target="_blank" rel="noopener">' . esc_html__( 'View Report', 'splecheh' ) . '</a>';
 	}
 
-	private function column_details( WP_Post $item ): string {
+	protected function column_details( WP_Post $item ): string {
 		if ( ! Splecheh_SpellCheckReport::get_report_url( $item->ID ) ) {
 			return '&mdash;';
 		}
@@ -161,13 +161,53 @@ class Splecheh_SpellCheckListTable extends WP_List_Table {
 		);
 	}
 
-	private function column_actions( WP_Post $item ): string {
-		return sprintf(
-			'<button class="button splecheh-run-check" data-post-id="%d">%s</button>
-			<span class="splecheh-spinner spinner" style="display:none;float:none;margin:0 4px;vertical-align:middle;"></span>',
-			$item->ID,
-			esc_html__( 'Spell Check', 'splecheh' )
+	protected function column_actions( WP_Post $item ): string {
+		return self::render_actions_html( $item->ID );
+	}
+
+	/**
+	 * Renders the Run/Re-run button plus, once a report exists, links to the report JSON
+	 * and the Spell Check Details page. Shared by the list table render and the AJAX response
+	 * so both stay in sync.
+	 */
+	public static function render_actions_html( int $post_id ): string {
+		$report_url = Splecheh_SpellCheckReport::get_report_url( $post_id );
+		$label      = $report_url ? __( 'Re-run', 'splecheh' ) : __( 'Run Now', 'splecheh' );
+
+		$html  = sprintf(
+			'<button class="button splecheh-run-check" data-post-id="%d">%s</button>',
+			$post_id,
+			esc_html( $label )
 		);
+		$html .= '<span class="splecheh-spinner spinner" style="display:none;float:none;margin:0 4px;vertical-align:middle;"></span>';
+
+		if ( $report_url ) {
+			$html .= sprintf(
+				' <a class="button button-small" href="%s" target="_blank" rel="noopener">%s</a>',
+				esc_url( $report_url ),
+				esc_html__( 'View Report', 'splecheh' )
+			);
+
+			$details_url = add_query_arg(
+				[
+					'page'    => 'splecheh-details',
+					'post_id' => $post_id,
+				],
+				admin_url( 'admin.php' )
+			);
+
+			$html .= sprintf(
+				' <a class="button button-small" href="%s" target="_blank" rel="noopener">%s</a>',
+				esc_url( $details_url ),
+				sprintf(
+					/* translators: %d: number of unresolved spelling issues */
+					esc_html__( 'Details (%d)', 'splecheh' ),
+					Splecheh_SpellCheckReport::count_unresolved( $post_id )
+				)
+			);
+		}
+
+		return $html;
 	}
 
 	/**
