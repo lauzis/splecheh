@@ -3,7 +3,7 @@
  * Plugin Name: Splecheh - WordPress spellcheck plugin
  * Plugin URI:  https://github.com/lauzis/splecheh
  * Description: Run spell check on all articles and post types to find spelling errors.
- * Version:     0.8.0
+ * Version:     0.9.0
  * Author:      Aivars Lauzis
  * Text Domain: splecheh
  * License:     MIT
@@ -14,7 +14,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'SPLECHEH_VERSION', '0.8.0' );
+define( 'SPLECHEH_VERSION', '0.9.0' );
 define( 'SPLECHEH_DIR', plugin_dir_path( __FILE__ ) );
 define( 'SPLECHEH_LOG_PATH', SPLECHEH_DIR . 'logs' );
 define( 'SPLECHEH_PLUGIN_FILE', __FILE__ );
@@ -186,6 +186,10 @@ function splecheh_register_settings_fields(): void {
 						)
 					),
 
+				\Carbon_Fields\Field::make( 'checkbox', 'splecheh_ignore_shortcodes', __( 'Ignore Shortcodes', 'splecheh' ) )
+					->set_default_value( true )
+					->set_help_text( __( 'When enabled, shortcode literals (e.g. "[shortcode attr=\"value\"]") are excluded from spell checking.', 'splecheh' ) ),
+
 				\Carbon_Fields\Field::make( 'separator', 'splecheh_bg_separator', __( 'Background Spell Check', 'splecheh' ) ),
 
 				\Carbon_Fields\Field::make( 'checkbox', 'splecheh_bg_enabled', __( 'Enable Background Spell Check', 'splecheh' ) )
@@ -232,6 +236,17 @@ function splecheh_logs_enabled(): bool {
 		return true;
 	}
 	return (bool) carbon_get_theme_option( 'splecheh_logs_enabled' );
+}
+
+/**
+ * Whether shortcode literals should be excluded from spell checking.
+ * Defaults to enabled when Carbon Fields isn't loaded yet.
+ */
+function splecheh_ignore_shortcodes_enabled(): bool {
+	if ( ! function_exists( 'carbon_get_theme_option' ) ) {
+		return true;
+	}
+	return (bool) carbon_get_theme_option( 'splecheh_ignore_shortcodes' );
 }
 
 /**

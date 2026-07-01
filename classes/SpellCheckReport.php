@@ -19,10 +19,7 @@ class Splecheh_SpellCheckReport {
 
 		$language = splecheh_get_language_code( $post_id );
 
-		// Strip HTML and decode entities for plain-text spell checking.
-		$plain_text = wp_strip_all_tags( $post->post_content );
-		$plain_text = html_entity_decode( $plain_text, ENT_QUOTES | ENT_HTML5, 'UTF-8' );
-		$plain_text = trim( $plain_text );
+		$plain_text = self::prepare_text( $post->post_content, splecheh_ignore_shortcodes_enabled() );
 
 		if ( $plain_text === '' ) {
 			$errors = [];
@@ -64,6 +61,44 @@ class Splecheh_SpellCheckReport {
 		$locale = get_locale();
 		$parts  = explode( '_', $locale );
 		return $parts[0];
+	}
+
+	/**
+	 * Strips HTML and decodes entities for plain-text spell checking, optionally
+	 * removing shortcode literals first so they never surface as spelling errors.
+	 */
+	public static function prepare_text( string $content, bool $ignore_shortcodes ): string {
+		if ( $ignore_shortcodes ) {
+			$content = self::strip_shortcodes( $content );
+		}
+
+		$text = wp_strip_all_tags( $content );
+		$text = html_entity_decode( $text, ENT_QUOTES | ENT_HTML5, 'UTF-8' );
+		return trim( $text );
+	}
+
+	/**
+	 * Removes WordPress-style shortcode literals — e.g. "[shortcode attr=\"value\"]" or
+	 * "[shortcode]enclosed content[/shortcode]" — replacing each with a single space so
+	 * surrounding words aren't merged together. Mirrors WordPress's own shortcode syntax
+	 * (see get_shortcode_regex()) but matches any tag name, not just registered ones, since
+	 * spell checking may run before the shortcode's owning plugin has registered it.
+	 * Shortcodes escaped as "[[tag]]" are treated as literal text, not stripped.
+	 */
+	public static function strip_shortcodes( string $content ): string {
+		$tag     = '[a-zA-Z][a-zA-Z0-9_-]*';
+		$pattern = '/\[(\[?)(' . $tag . ')(?![\w-])([^\]\/]*(?:\/(?!\])[^\]\/]*)*?)(?:(\/)\]|\](?:([^\[]*+(?:\[(?!\/\2\])[^\[]*+)*+)\[\/\2\])?)(\]?)/s';
+
+		return (string) preg_replace_callback(
+			$pattern,
+			function ( array $m ): string {
+				if ( $m[1] === '[' && $m[6] === ']' ) {
+					return substr( $m[0], 1, -1 );
+				}
+				return ' ';
+			},
+			$content
+		);
 	}
 
 	/**
