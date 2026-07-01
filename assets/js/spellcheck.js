@@ -61,6 +61,13 @@
 							'" target="_blank" rel="noopener">' + splechehCheck.i18n.viewReport + '</a>';
 					}
 
+					// Update Actions cell (button label + report/details links).
+					var actionsCell = row.querySelector('[data-colname="Actions"]') ||
+						row.cells[6];
+					if (actionsCell && result.actions_html) {
+						actionsCell.innerHTML = result.actions_html;
+					}
+
 					var errorCount = result.error_count;
 					if (msg) {
 						if (errorCount === 0) {

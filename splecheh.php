@@ -3,7 +3,7 @@
  * Plugin Name: Splecheh - WordPress spellcheck plugin
  * Plugin URI:  https://github.com/lauzis/splecheh
  * Description: Run spell check on all articles and post types to find spelling errors.
- * Version:     0.5.0
+ * Version:     0.6.0
  * Author:      Aivars Lauzis
  * Text Domain: splecheh
  * License:     MIT
@@ -14,7 +14,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'SPLECHEH_VERSION', '0.5.0' );
+define( 'SPLECHEH_VERSION', '0.6.0' );
 define( 'SPLECHEH_DIR', plugin_dir_path( __FILE__ ) );
 define( 'SPLECHEH_LOG_PATH', SPLECHEH_DIR . 'logs' );
 define( 'SPLECHEH_PLUGIN_FILE', __FILE__ );
@@ -345,6 +345,8 @@ function splecheh_ajax_run_spellcheck(): void {
 		wp_send_json_error( __( 'Invalid post ID.', 'splecheh' ), 400 );
 	}
 
+	Splecheh_Logs::addLog( 'spellcheck', 'Spell check started for post ' . $post_id, [] );
+
 	$result = Splecheh_SpellCheckReport::run( $post_id );
 	if ( is_wp_error( $result ) ) {
 		Splecheh_Logs::addLog( 'spellcheck', 'Spell check failed for post ' . $post_id, [ 'error' => $result->get_error_message() ] );
@@ -353,11 +355,14 @@ function splecheh_ajax_run_spellcheck(): void {
 
 	Splecheh_Logs::addLog( 'spellcheck', 'Spell check completed for post ' . $post_id, [ 'errors' => count( $result['errors'] ) ] );
 
+	require_once SPLECHEH_DIR . 'classes/SpellCheckListTable.php';
+
 	wp_send_json_success(
 		[
 			'post_id'             => $post_id,
 			'error_count'         => count( $result['errors'] ),
 			'report_url'          => Splecheh_SpellCheckReport::get_report_url( $post_id ),
+			'actions_html'        => Splecheh_SpellCheckListTable::render_actions_html( $post_id ),
 			'checked_at_formatted' => get_date_from_gmt(
 				gmdate( 'Y-m-d H:i:s' ),
 				get_option( 'date_format' ) . ' ' . get_option( 'time_format' )
