@@ -41,6 +41,9 @@ Run `composer install` to pull in dev dependencies (PHPUnit), then `composer tes
 
 ## Change log
 
+### --- 0.13.0 ---
+- Added a "Splecheh Spell Check" widget to the WordPress admin Dashboard, showing the count of unresolved spelling errors, the count of articles with unresolved errors, and the count of ignored words (global + per-post), with a link to the Spell Check page.
+
 ### --- 0.12.0 ---
 - Added a "Re-run Spell Check" button to the Spell Check Details page; it re-runs the check for that post and refreshes the issues list in place, without leaving the page.
 - The Details page re-run reuses the same spell check logic and missing-Aspell-wordlist error handling as the Spell Check table's "Run Now"/"Re-run" button.
