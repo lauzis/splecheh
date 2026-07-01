@@ -194,6 +194,66 @@ class Splecheh_SpellCheckReport {
 	}
 
 	/**
+	 * Aggregates data for the "at a glance" dashboard widget across all posts of the
+	 * enabled post types: total unresolved issues, distinct posts with at least one
+	 * unresolved issue, and ignored words (global ignore list plus per-post ignores).
+	 *
+	 * @return array{unresolved_count: int, posts_with_errors: int, ignored_words: int}
+	 */
+	public static function get_dashboard_summary(): array {
+		$enabled_types     = splecheh_get_enabled_post_types();
+		$unresolved_count  = 0;
+		$posts_with_errors = 0;
+		$ignored_words     = 0;
+
+		if ( ! empty( $enabled_types ) ) {
+			$checked_query = new WP_Query(
+				[
+					'post_type'      => $enabled_types,
+					'post_status'    => 'publish',
+					'posts_per_page' => -1,
+					'fields'         => 'ids',
+					'meta_key'       => '_splecheh_report_uuid',
+					'no_found_rows'  => true,
+				]
+			);
+
+			foreach ( $checked_query->posts as $post_id ) {
+				$unresolved = self::count_unresolved( $post_id );
+				if ( $unresolved > 0 ) {
+					$unresolved_count += $unresolved;
+					$posts_with_errors++;
+				}
+			}
+
+			$ignored_query = new WP_Query(
+				[
+					'post_type'      => $enabled_types,
+					'post_status'    => 'publish',
+					'posts_per_page' => -1,
+					'fields'         => 'ids',
+					'meta_key'       => '_splecheh_ignored_words',
+					'no_found_rows'  => true,
+				]
+			);
+
+			foreach ( $ignored_query->posts as $post_id ) {
+				$ignored_words += count( (array) get_post_meta( $post_id, '_splecheh_ignored_words', true ) );
+			}
+		}
+
+		foreach ( Splecheh_IgnoreList::get_all() as $words ) {
+			$ignored_words += count( (array) $words );
+		}
+
+		return [
+			'unresolved_count'  => $unresolved_count,
+			'posts_with_errors' => $posts_with_errors,
+			'ignored_words'     => $ignored_words,
+		];
+	}
+
+	/**
 	 * Replaces the specific occurrence of $word found inside $excerpt within $content.
 	 * Falls back to the first whole-word occurrence in $content if the excerpt can't be located
 	 * (e.g. it was extracted from stripped/decoded text and no longer matches the raw HTML).
