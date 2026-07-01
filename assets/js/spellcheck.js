@@ -4,6 +4,30 @@
 
 	document.addEventListener('DOMContentLoaded', function () {
 
+		// Updates a row's Last Checked/Status/Report/Actions cells after a successful run.
+		// Shared by the per-row button and the bulk "Re-run Spell Check" action.
+		function applyRunResult(row, result) {
+			var checkedCell = row.querySelector('[data-colname="Last Checked"]') || row.cells[3];
+			if (checkedCell) checkedCell.textContent = result.checked_at_formatted;
+
+			var statusCell = row.querySelector('[data-colname="Status"]') || row.cells[4];
+			if (statusCell) {
+				statusCell.innerHTML = '<span class="splecheh-badge splecheh-badge--current">' +
+					splechehCheck.i18n.upToDate + '</span>';
+			}
+
+			var reportCell = row.querySelector('[data-colname="Report"]') || row.cells[5];
+			if (reportCell && result.report_url) {
+				reportCell.innerHTML = '<a href="' + result.report_url +
+					'" target="_blank" rel="noopener">' + splechehCheck.i18n.viewReport + '</a>';
+			}
+
+			var actionsCell = row.querySelector('[data-colname="Actions"]') || row.cells[7];
+			if (actionsCell && result.actions_html) {
+				actionsCell.innerHTML = result.actions_html;
+			}
+		}
+
 		// Per-row spell check button.
 		document.addEventListener('click', function (e) {
 			var btn = e.target.closest('.splecheh-run-check');
@@ -51,33 +75,7 @@
 
 					var result = data.data;
 
-					// Update Last Checked cell.
-					var checkedCell = row.querySelector('[data-colname="Last Checked"]') ||
-						row.cells[2];
-					if (checkedCell) checkedCell.textContent = result.checked_at_formatted;
-
-					// Update Status cell.
-					var statusCell = row.querySelector('[data-colname="Status"]') ||
-						row.cells[3];
-					if (statusCell) {
-						statusCell.innerHTML = '<span class="splecheh-badge splecheh-badge--current">' +
-							splechehCheck.i18n.upToDate + '</span>';
-					}
-
-					// Update Report cell.
-					var reportCell = row.querySelector('[data-colname="Report"]') ||
-						row.cells[4];
-					if (reportCell && result.report_url) {
-						reportCell.innerHTML = '<a href="' + result.report_url +
-							'" target="_blank" rel="noopener">' + splechehCheck.i18n.viewReport + '</a>';
-					}
-
-					// Update Actions cell (button label + report/details links).
-					var actionsCell = row.querySelector('[data-colname="Actions"]') ||
-						row.cells[6];
-					if (actionsCell && result.actions_html) {
-						actionsCell.innerHTML = result.actions_html;
-					}
+					applyRunResult(row, result);
 
 					var errorCount = result.error_count;
 					if (msg) {
@@ -146,6 +144,89 @@
 					.catch(function () {
 						runNowBtn.disabled = false;
 						if (spinner) spinner.style.display = 'none';
+					});
+			});
+		}
+
+		// Bulk "Re-run Spell Check" action.
+		var listForm = document.getElementById('splecheh-list-form');
+		if (listForm) {
+			listForm.addEventListener('click', function (e) {
+				var applyBtn = e.target.closest('#doaction, #doaction2');
+				if (!applyBtn) return;
+
+				var select = document.getElementById(
+					applyBtn.id === 'doaction2' ? 'bulk-action-selector-bottom' : 'bulk-action-selector-top'
+				);
+				var action = select ? select.value : '';
+				if (action !== 'splecheh_bulk_rerun') return;
+
+				e.preventDefault();
+
+				var msg = document.getElementById('splecheh-check-message');
+				var checkboxes = Array.prototype.filter.call(
+					listForm.querySelectorAll('input[name="post_ids[]"]'),
+					function (cb) { return cb.checked; }
+				);
+
+				if (checkboxes.length === 0) {
+					if (msg) {
+						msg.className = 'notice notice-error is-dismissible';
+						msg.querySelector('p').textContent = splechehCheck.i18n.selectRows;
+						msg.style.display = 'block';
+					}
+					return;
+				}
+
+				var rowsById = {};
+				checkboxes.forEach(function (cb) {
+					rowsById[cb.value] = cb.closest('tr');
+				});
+
+				applyBtn.disabled = true;
+
+				var formData = new FormData();
+				formData.append('action', 'splecheh_bulk_run');
+				formData.append('nonce', splechehCheck.bulkRunNonce);
+				checkboxes.forEach(function (cb) { formData.append('post_ids[]', cb.value); });
+
+				fetch(splechehCheck.ajaxUrl, { method: 'POST', body: formData })
+					.then(function (r) { return r.json(); })
+					.then(function (data) {
+						applyBtn.disabled = false;
+
+						if (!data.success) {
+							if (msg) {
+								msg.className = 'notice notice-error is-dismissible';
+								msg.querySelector('p').textContent = 'Bulk spell check request failed. Please try again.';
+								msg.style.display = 'block';
+							}
+							return;
+						}
+
+						var results = data.data.results;
+						Object.keys(results).forEach(function (postId) {
+							var row = rowsById[postId];
+							if (row && results[postId].success) applyRunResult(row, results[postId]);
+						});
+
+						if (msg) {
+							msg.className = data.data.failure_count > 0 ? 'notice notice-warning is-dismissible' : 'notice notice-success is-dismissible';
+							var text = data.data.success_count + ' ' + splechehCheck.i18n.bulkChecked;
+							if (data.data.failure_count > 0) {
+								text += ' ' + data.data.failure_count + ' ' + splechehCheck.i18n.bulkFailed;
+							}
+							msg.querySelector('p').textContent = text;
+							msg.style.display = 'block';
+						}
+					})
+					.catch(function () {
+						applyBtn.disabled = false;
+						if (msg) {
+							msg.className = 'notice notice-error is-dismissible';
+							msg.querySelector('p').textContent = 'Bulk spell check request failed. Please try again.';
+							msg.style.display = 'block';
+						}
 					});
 			});
 		}

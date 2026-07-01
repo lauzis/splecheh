@@ -22,6 +22,7 @@ class Splecheh_SpellCheckListTable extends WP_List_Table {
 
 	public function get_columns(): array {
 		return [
+			'cb'           => '<input type="checkbox" />',
 			'title'        => __( 'Title', 'splecheh' ),
 			'post_type'    => __( 'Post Type', 'splecheh' ),
 			'last_checked' => __( 'Last Checked', 'splecheh' ),
@@ -37,6 +38,19 @@ class Splecheh_SpellCheckListTable extends WP_List_Table {
 			'title'        => [ 'post_title', false ],
 			'last_checked' => [ 'last_checked', false ],
 		];
+	}
+
+	protected function get_bulk_actions(): array {
+		return [
+			'splecheh_bulk_rerun' => __( 'Re-run Spell Check', 'splecheh' ),
+		];
+	}
+
+	protected function column_cb( $item ): string {
+		return sprintf(
+			'<input type="checkbox" name="post_ids[]" value="%d">',
+			$item->ID
+		);
 	}
 
 	public function prepare_items(): void {

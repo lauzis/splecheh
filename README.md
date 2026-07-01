@@ -41,6 +41,10 @@ Run `composer install` to pull in dev dependencies (PHPUnit), then `composer tes
 
 ## Change log
 
+### --- 0.15.0 ---
+- Added a "Re-run Spell Check" bulk action to the Spell Check table: select rows via the new checkbox column and re-run the check for all of them at once, with each row's status/report/details links updating in place when done.
+- Bulk runs are logged (start/completion, including failure counts) consistent with existing logging for manual and cron-triggered checks.
+
 ### --- 0.14.0 ---
 - Each spell check report now also saves the plugin version it was generated with, in a `_splecheh_version` post meta field.
 - Added an "Invalidate Spell Check on Plugin Version Change" setting (Settings page), disabled by default; when enabled, a report is also considered outdated if its stored plugin version differs from the current one, in addition to the existing post-edited-since-last-check rule. This affects the Spell Check table's status column and the background cron batch.
