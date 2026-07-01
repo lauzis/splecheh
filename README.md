@@ -41,6 +41,10 @@ Run `composer install` to pull in dev dependencies (PHPUnit), then `composer tes
 
 ## Change log
 
+### --- 0.14.0 ---
+- Each spell check report now also saves the plugin version it was generated with, in a `_splecheh_version` post meta field.
+- Added an "Invalidate Spell Check on Plugin Version Change" setting (Settings page), disabled by default; when enabled, a report is also considered outdated if its stored plugin version differs from the current one, in addition to the existing post-edited-since-last-check rule. This affects the Spell Check table's status column and the background cron batch.
+
 ### --- 0.13.0 ---
 - Added a "Splecheh Spell Check" widget to the WordPress admin Dashboard, showing the count of unresolved spelling errors, the count of articles with unresolved errors, and the count of ignored words (global + per-post), with a link to the Spell Check page.
 

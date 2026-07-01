@@ -452,7 +452,24 @@ class Splecheh_SpellCheckReport {
 
 		update_post_meta( $post_id, '_splecheh_report_uuid', $uuid );
 		update_post_meta( $post_id, '_splecheh_checked_at', gmdate( 'Y-m-d H:i:s' ) );
+		update_post_meta( $post_id, '_splecheh_version', SPLECHEH_VERSION );
 
 		return true;
+	}
+
+	/**
+	 * Whether a saved report should be considered outdated: the post was edited
+	 * after the check, or — when $check_version is true — the report's stored
+	 * plugin version differs from the current one.
+	 */
+	public static function is_outdated( string $checked_at, string $post_modified_gmt, ?string $stored_version, bool $check_version, string $current_version = SPLECHEH_VERSION ): bool {
+		$post_modified_ts = strtotime( $post_modified_gmt );
+		$checked_ts       = strtotime( $checked_at . ' UTC' );
+
+		if ( $post_modified_ts > $checked_ts ) {
+			return true;
+		}
+
+		return $check_version && $stored_version !== $current_version;
 	}
 }

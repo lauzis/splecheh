@@ -121,9 +121,16 @@ class Splecheh_SpellCheckListTable extends WP_List_Table {
 		if ( ! $checked_at ) {
 			return '<span class="splecheh-badge splecheh-badge--never">' . esc_html__( 'Never checked', 'splecheh' ) . '</span>';
 		}
-		$post_modified_gmt = strtotime( $item->post_modified_gmt );
-		$checked_ts        = strtotime( $checked_at . ' UTC' );
-		if ( $post_modified_gmt > $checked_ts ) {
+
+		$stored_version = get_post_meta( $item->ID, '_splecheh_version', true );
+		$is_outdated    = Splecheh_SpellCheckReport::is_outdated(
+			$checked_at,
+			$item->post_modified_gmt,
+			$stored_version !== '' ? (string) $stored_version : null,
+			splecheh_invalidate_on_version_change_enabled()
+		);
+
+		if ( $is_outdated ) {
 			return '<span class="splecheh-badge splecheh-badge--outdated">' . esc_html__( 'Outdated', 'splecheh' ) . '</span>';
 		}
 		return '<span class="splecheh-badge splecheh-badge--current">' . esc_html__( 'Up to date', 'splecheh' ) . '</span>';
