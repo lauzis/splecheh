@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Splecheh\Tests\Unit;
 
-use PhpSpellcheck\MisspellingInterface;
 use PhpSpellcheck\Spellchecker\SpellcheckerInterface;
 use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
