@@ -8,11 +8,27 @@
 
 		var msg = document.getElementById('splecheh-details-message');
 
-		function showMessage(type, text) {
+		function showMessage(type, text, docsUrl) {
 			if (!msg) return;
 			msg.className = 'notice notice-' + type + ' is-dismissible';
-			msg.querySelector('p').textContent = text;
+			var p = msg.querySelector('p');
+			p.textContent = text;
+			if (docsUrl) {
+				var link = document.createElement('a');
+				link.href = docsUrl;
+				link.target = '_blank';
+				link.rel = 'noopener';
+				link.textContent = 'Learn more';
+				p.appendChild(document.createTextNode(' '));
+				p.appendChild(link);
+			}
 			msg.style.display = 'block';
+		}
+
+		function escapeHtml(text) {
+			var div = document.createElement('div');
+			div.textContent = text;
+			return div.innerHTML;
 		}
 
 		function markRowResolved(row) {
@@ -80,6 +96,74 @@
 				showMessage('success', data.data.ignored + ' ' + splechehDetails.i18n.issuesUpdated);
 			}).catch(function () {
 				showMessage('error', splechehDetails.i18n.requestFailed);
+			});
+		}
+
+		function renderIssueRow(error, index) {
+			var checkboxAttrs = error.resolved ? ' disabled' : '';
+			var actionsCell = error.resolved
+				? '<span class="splecheh-badge splecheh-badge--current">' + splechehDetails.i18n.resolved + '</span>'
+				: '<button class="button button-primary button-small splecheh-fix">' + splechehDetails.i18n.fix + '</button> ' +
+					'<button class="button button-small splecheh-ignore-post">' + splechehDetails.i18n.ignoreInPost + '</button> ' +
+					'<button class="button button-small splecheh-ignore-always">' + splechehDetails.i18n.ignoreAlways + '</button>';
+
+			return '<tr data-index="' + index + '"' + (error.resolved ? ' class="splecheh-resolved"' : '') + '>' +
+				'<th class="check-column"><input type="checkbox" class="splecheh-row-check"' + checkboxAttrs + '></th>' +
+				'<td>' + escapeHtml(error.word) + '</td>' +
+				'<td>' + error.excerpt + '</td>' +
+				'<td><input type="text" class="splecheh-replacement regular-text" value="' + escapeHtml(error.suggestion) + '"' + checkboxAttrs + '></td>' +
+				'<td>' + actionsCell + '</td>' +
+				'</tr>';
+		}
+
+		function renderIssues(errors) {
+			var tbody = table.querySelector('tbody');
+			if (!tbody) return;
+
+			if (errors.length === 0) {
+				tbody.innerHTML = '<tr><td colspan="5">' + splechehDetails.i18n.noIssues + '</td></tr>';
+				return;
+			}
+
+			tbody.innerHTML = errors.map(renderIssueRow).join('');
+		}
+
+		// Re-run spell check.
+		var rerunBtn = document.getElementById('splecheh-rerun-check');
+		if (rerunBtn) {
+			rerunBtn.addEventListener('click', function () {
+				var spinner = document.getElementById('splecheh-rerun-spinner');
+				rerunBtn.disabled = true;
+				rerunBtn.textContent = splechehDetails.i18n.rerunning;
+				if (spinner) spinner.style.display = 'inline-block';
+
+				post('splecheh_details_rerun', {}).then(function (data) {
+					rerunBtn.disabled = false;
+					rerunBtn.textContent = splechehDetails.i18n.rerun;
+					if (spinner) spinner.style.display = 'none';
+
+					if (!data.success) {
+						var errData = data.data || {};
+						var text = (typeof errData === 'string' ? errData : errData.message) || splechehDetails.i18n.requestFailed;
+						showMessage('error', text, errData.docs_url);
+						return;
+					}
+
+					var errors = data.data.errors;
+					renderIssues(errors);
+
+					var unresolvedCount = errors.filter(function (error) { return !error.resolved; }).length;
+					if (unresolvedCount === 0) {
+						showMessage('success', splechehDetails.i18n.noIssues);
+					} else {
+						showMessage('warning', unresolvedCount + ' ' + splechehDetails.i18n.issuesFound);
+					}
+				}).catch(function () {
+					rerunBtn.disabled = false;
+					rerunBtn.textContent = splechehDetails.i18n.rerun;
+					if (spinner) spinner.style.display = 'none';
+					showMessage('error', splechehDetails.i18n.requestFailed);
+				});
 			});
 		}
 

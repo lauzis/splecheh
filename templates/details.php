@@ -33,6 +33,11 @@ $errors = $report['errors'] ?? [];
 
 		<div id="splecheh-details-message" style="display:none;" class="notice is-dismissible"><p></p></div>
 
+		<p>
+			<button type="button" class="button button-primary" id="splecheh-rerun-check"><?php esc_html_e( 'Re-run Spell Check', 'splecheh' ); ?></button>
+			<span class="splecheh-spinner spinner" id="splecheh-rerun-spinner" style="display:none;float:none;margin:0 4px;vertical-align:middle;"></span>
+		</p>
+
 		<div class="tablenav top">
 			<div class="alignleft actions">
 				<label for="splecheh-bulk-action" class="screen-reader-text"><?php esc_html_e( 'Bulk action', 'splecheh' ); ?></label>

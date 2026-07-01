@@ -235,6 +235,28 @@ class Splecheh_SpellCheckReport {
 	}
 
 	/**
+	 * Maps a report's error entries into the shape the Details page's JS uses to
+	 * redraw the issues table in place (e.g. after an AJAX re-run), pre-escaping
+	 * and highlighting the excerpt the same way the server-rendered rows do.
+	 *
+	 * @param array[] $errors
+	 * @return array[]
+	 */
+	public static function format_errors_for_details( array $errors ): array {
+		return array_map(
+			static function ( array $error ): array {
+				return [
+					'word'       => $error['word'],
+					'excerpt'    => self::highlight_word( $error['excerpt'], $error['word'] ),
+					'suggestion' => $error['suggestions'][0] ?? '',
+					'resolved'   => ! empty( $error['resolved'] ),
+				];
+			},
+			$errors
+		);
+	}
+
+	/**
 	 * Runs the spell checker on plain text and returns an array of error entries.
 	 *
 	 * @return array|WP_Error
