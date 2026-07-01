@@ -71,7 +71,7 @@ $errors = $report['errors'] ?? [];
 						<input type="checkbox" class="splecheh-row-check" <?php disabled( $resolved ); ?>>
 					</th>
 					<td><?php echo esc_html( $error['word'] ); ?></td>
-					<td><?php echo esc_html( $error['excerpt'] ); ?></td>
+					<td><?php echo Splecheh_SpellCheckReport::highlight_word( $error['excerpt'], $error['word'] ); ?></td>
 					<td>
 						<input type="text" class="splecheh-replacement regular-text" value="<?php echo esc_attr( $suggestion ); ?>" <?php disabled( $resolved ); ?>>
 					</td>

@@ -3,7 +3,7 @@
  * Plugin Name: Splecheh - WordPress spellcheck plugin
  * Plugin URI:  https://github.com/lauzis/splecheh
  * Description: Run spell check on all articles and post types to find spelling errors.
- * Version:     0.9.0
+ * Version:     0.10.0
  * Author:      Aivars Lauzis
  * Text Domain: splecheh
  * License:     MIT

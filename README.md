@@ -41,6 +41,9 @@ Run `composer install` to pull in dev dependencies (PHPUnit), then `composer tes
 
 ## Change log
 
+### --- 0.10.0 ---
+- Spell Check Details page now renders the flagged word in **bold** within the sentence excerpt, making it easier to spot at a glance.
+
 ### --- 0.9.0 ---
 - Added an "Ignore Shortcodes" setting (Settings page), enabled by default; when on, shortcode literals (e.g. `[shortcode attr="value"]` or `[shortcode]content[/shortcode]`) are excluded from spell checking instead of being flagged as misspellings.
 

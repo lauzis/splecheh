@@ -212,6 +212,24 @@ class Splecheh_SpellCheckReport {
 	}
 
 	/**
+	 * HTML-escapes $excerpt and wraps whole-word, case-insensitive occurrences of $word in <strong> tags.
+	 * Escaping happens first so the returned markup is safe to echo directly.
+	 */
+	public static function highlight_word( string $excerpt, string $word ): string {
+		$escaped_excerpt = esc_html( $excerpt );
+		$escaped_word    = esc_html( $word );
+
+		if ( $escaped_word === '' ) {
+			return $escaped_excerpt;
+		}
+
+		$pattern = '/\b' . preg_quote( $escaped_word, '/' ) . '\b/ui';
+		$result  = preg_replace( $pattern, '<strong>$0</strong>', $escaped_excerpt );
+
+		return $result !== null ? $result : $escaped_excerpt;
+	}
+
+	/**
 	 * Runs the spell checker on plain text and returns an array of error entries.
 	 *
 	 * @return array|WP_Error

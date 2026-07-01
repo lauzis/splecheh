@@ -23,6 +23,12 @@ if ( ! function_exists( 'is_wp_error' ) ) {
 	}
 }
 
+if ( ! function_exists( 'esc_html' ) ) {
+	function esc_html( string $text ): string {
+		return htmlspecialchars( $text, ENT_QUOTES, 'UTF-8' );
+	}
+}
+
 if ( ! function_exists( 'wp_strip_all_tags' ) ) {
 	function wp_strip_all_tags( string $string, bool $remove_breaks = false ): string {
 		$string = preg_replace( '/<(script|style)[^>]*?>.*?<\/\\1>/si', '', $string ) ?? $string;
