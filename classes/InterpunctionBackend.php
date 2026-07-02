@@ -1,10 +1,19 @@
 <?php
 
+use Symfony\Component\Process\Process;
+
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
 class Splecheh_InterpunctionBackend {
+
+	/**
+	 * Default timeout (in seconds) for the Commandline Interpunction Check process,
+	 * so a stuck/hanging command fails fast with a clear error instead of hanging
+	 * the request indefinitely. Filterable via `splecheh_interpunction_command_timeout`.
+	 */
+	const DEFAULT_COMMAND_TIMEOUT = 60;
 
 	/**
 	 * Canned sentences used by the Settings page "Test Interpunction Check" button,
@@ -94,11 +103,16 @@ class Splecheh_InterpunctionBackend {
 	 * script owns its own credentials. See bin/interpunction-check.sh for a reference
 	 * implementation of this contract.
 	 *
-	 * @param string[] $sentences
+	 * Runs via Symfony Process (rather than a raw proc_open/stream_get_contents loop)
+	 * with an explicit timeout, so a command that blocks on stdin or fills a pipe
+	 * buffer fails fast with a clear WP_Error instead of hanging the request.
+	 *
+	 * @param string[]    $sentences
+	 * @param string|null $command Overrides the configured command; used by tests.
 	 * @return array|WP_Error
 	 */
-	private static function check_commandline( array $sentences, string $language, string $prompt ) {
-		$command = trim( self::get_command() );
+	private static function check_commandline( array $sentences, string $language, string $prompt, ?string $command = null ) {
+		$command = trim( $command ?? self::get_command() );
 		if ( $command === '' ) {
 			return new WP_Error( 'interpunction_no_command', __( 'No commandline command is configured for the Interpunction Check.', 'splecheh' ) );
 		}
@@ -111,36 +125,31 @@ class Splecheh_InterpunctionBackend {
 			]
 		);
 
-		$descriptors = [
-			1 => [ 'pipe', 'w' ],
-			2 => [ 'pipe', 'w' ],
-		];
+		$timeout = (float) apply_filters( 'splecheh_interpunction_command_timeout', self::DEFAULT_COMMAND_TIMEOUT );
 
-		$process = proc_open( $command . ' ' . escapeshellarg( $payload ), $descriptors, $pipes );
-		if ( ! is_resource( $process ) ) {
-			return new WP_Error( 'interpunction_command_failed', __( 'Could not start the interpunction commandline process.', 'splecheh' ) );
+		Splecheh_Logs::addLog( 'interpunction', 'Interpunction commandline started', [ 'command' => $command, 'timeout' => $timeout ] );
+
+		try {
+			$process = Process::fromShellCommandline( $command . ' ' . escapeshellarg( $payload ) );
+			$process->setTimeout( $timeout );
+			$exit_code = $process->run();
+		} catch ( \Throwable $exception ) {
+			Splecheh_Logs::addLog( 'interpunction', 'Interpunction commandline failed', [ 'command' => $command, 'error' => $exception->getMessage() ] );
+			return new WP_Error( 'interpunction_command_failed', $exception->getMessage() );
 		}
-
-		$stdout = (string) stream_get_contents( $pipes[1] );
-		$stderr = (string) stream_get_contents( $pipes[2] );
-		fclose( $pipes[1] );
-		fclose( $pipes[2] );
-
-		$exit_code = proc_close( $process );
 
 		if ( $exit_code !== 0 ) {
-			return new WP_Error(
-				'interpunction_command_failed',
-				sprintf(
-					/* translators: 1: exit code, 2: stderr output */
-					__( 'Interpunction commandline exited with code %1$d: %2$s', 'splecheh' ),
-					$exit_code,
-					trim( $stderr )
-				)
+			$error_message = sprintf(
+				/* translators: 1: exit code, 2: stderr output */
+				__( 'Interpunction commandline exited with code %1$d: %2$s', 'splecheh' ),
+				$exit_code,
+				trim( $process->getErrorOutput() )
 			);
+			Splecheh_Logs::addLog( 'interpunction', 'Interpunction commandline failed', [ 'command' => $command, 'error' => $error_message ] );
+			return new WP_Error( 'interpunction_command_failed', $error_message );
 		}
 
-		return self::parse_results( $stdout );
+		return self::parse_results( $process->getOutput() );
 	}
 
 	/**

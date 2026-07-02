@@ -26,11 +26,15 @@ Settings:
 ### Commandline contract
 For the Commandline type, Splecheh runs the configured shell command with a single, shell-escaped argument: a JSON object `{"language": "...", "prompt": "...", "sentences": ["...", ...]}`. This keeps API keys out of WordPress — the script owns its own credentials (e.g. to call a locally-hosted model).
 
+The Commandline Command field is the command itself (e.g. `claude -p`) — it does **not** support `{prompt}`-style placeholders. The JSON payload above (including the prompt) is always appended as a single shell-escaped trailing argument, never interpolated into the command string.
+
 The script must print a JSON array to stdout, one item per input sentence and in the same order:
 
 ```
 [{"original": "...", "fixed": "...", "explanation": "..."}, ...]
 ```
+
+The process is run with a timeout (60 seconds by default, filterable via `splecheh_interpunction_command_timeout`); a command that hangs or exceeds the timeout fails with a clear error instead of hanging the request.
 
 A non-zero exit code is treated as a failure, with stderr shown as the error message. See [`bin/interpunction-check.sh`](bin/interpunction-check.sh) for a working (dummy, pass-through) reference implementation of this contract.
 
@@ -65,6 +69,10 @@ Built with the assistance of [CodeRabbit](https://coderabbit.ai) for code review
 Run `composer install` to pull in dev dependencies (PHPUnit), then `composer test` to run the test suite. The committed `vendor/` folder is production-only (no dev dependencies), so the plugin works as-is without running Composer.
 
 ## Change log
+
+### --- 0.19.1 ---
+- Fixed the Commandline Interpunction Check (and its Settings page "Test" button) hanging indefinitely — and returning an empty response with nothing in the Logs — for commands that block on stdin or fill a pipe buffer. `check_commandline()` now runs the command via Symfony `Process` with an explicit timeout (60s by default, filterable via `splecheh_interpunction_command_timeout`), and both the commandline call and the Test button now write start/failure entries to Logs.
+- Clarified the Commandline Command help text and README: the command string does not support `{prompt}`-style placeholders — the JSON payload (including the prompt) is always appended as a single shell-escaped trailing argument.
 
 ### --- 0.19.0 ---
 - Added a "Test Interpunction Check" button to the Settings page: runs the configured provider against a fixed set of canned example sentences (using the currently saved Type/Prompt/language settings) and shows the outcome inline, with expandable "Example request" and "Result" sections; on failure, the error message returned by the call is shown instead of a generic failure.
