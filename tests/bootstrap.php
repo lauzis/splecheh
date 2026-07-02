@@ -11,6 +11,7 @@ require dirname( __DIR__ ) . '/vendor/autoload.php';
 
 define( 'ABSPATH', __DIR__ . '/' );
 define( 'SPLECHEH_VERSION', '0.14.0-test' );
+define( 'SPLECHEH_LOG_PATH', sys_get_temp_dir() . '/splecheh-tests/logs' );
 
 if ( ! function_exists( '__' ) ) {
 	function __( string $text, string $domain = 'default' ): string {
@@ -138,6 +139,30 @@ if ( ! function_exists( 'get_locale' ) ) {
 	}
 }
 
+if ( ! function_exists( 'add_filter' ) ) {
+	function add_filter( string $tag, callable $callback ): bool {
+		$GLOBALS['__splecheh_test_filters'][ $tag ][] = $callback;
+		return true;
+	}
+}
+
+if ( ! function_exists( 'remove_all_filters' ) ) {
+	function remove_all_filters( string $tag ): bool {
+		unset( $GLOBALS['__splecheh_test_filters'][ $tag ] );
+		return true;
+	}
+}
+
+if ( ! function_exists( 'apply_filters' ) ) {
+	function apply_filters( string $tag, $value ) {
+		foreach ( $GLOBALS['__splecheh_test_filters'][ $tag ] ?? [] as $callback ) {
+			$value = $callback( $value );
+		}
+		return $value;
+	}
+}
+
+require_once dirname( __DIR__ ) . '/classes/Logs.php';
 require_once dirname( __DIR__ ) . '/classes/SpellCheckReport.php';
 require_once dirname( __DIR__ ) . '/classes/InterpunctionIgnoreList.php';
 require_once dirname( __DIR__ ) . '/classes/InterpunctionReport.php';

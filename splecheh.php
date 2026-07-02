@@ -3,7 +3,7 @@
  * Plugin Name: Splecheh - WordPress spellcheck plugin
  * Plugin URI:  https://github.com/lauzis/splecheh
  * Description: Run spell check on all articles and post types to find spelling errors.
- * Version:     0.19.0
+ * Version:     0.19.1
  * Author:      Aivars Lauzis
  * Text Domain: splecheh
  * License:     MIT
@@ -14,7 +14,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'SPLECHEH_VERSION', '0.19.0' );
+define( 'SPLECHEH_VERSION', '0.19.1' );
 define( 'SPLECHEH_DIR', plugin_dir_path( __FILE__ ) );
 define( 'SPLECHEH_LOG_PATH', SPLECHEH_DIR . 'logs' );
 define( 'SPLECHEH_PLUGIN_FILE', __FILE__ );
@@ -281,7 +281,7 @@ function splecheh_register_settings_fields(): void {
 					->set_help_text( __( 'How the interpunction check request is made.', 'splecheh' ) ),
 
 				\Carbon_Fields\Field::make( 'text', 'splecheh_interpunction_command', __( 'Commandline Command', 'splecheh' ) )
-					->set_help_text( __( 'Shell command to run for the "Commandline - Local model" type. Called with a single JSON parameter — {language, prompt, sentences} — and must print a JSON array of {original, fixed, explanation} on stdout. See bin/interpunction-check.sh for the reference contract. Keeps API keys out of WordPress: the script owns its own credentials.', 'splecheh' ) )
+					->set_help_text( __( 'Shell command to run for the "Commandline - Local model" type, e.g. "claude -p". The JSON parameter — {language, prompt, sentences} — is always appended as a single shell-escaped trailing argument; the command string itself does not support {prompt}-style placeholders. Must print a JSON array of {original, fixed, explanation} on stdout. See bin/interpunction-check.sh for the reference contract. Keeps API keys out of WordPress: the script owns its own credentials.', 'splecheh' ) )
 					->set_conditional_logic(
 						[
 							[
@@ -1119,9 +1119,23 @@ function splecheh_ajax_interpunction_test(): void {
 	}
 
 	$payload = Splecheh_InterpunctionBackend::build_test_payload();
-	$result  = Splecheh_InterpunctionBackend::check( $payload['sentences'], $payload['language'] );
+
+	Splecheh_Logs::addLog( 'interpunction', 'Interpunction test started', [] );
+
+	try {
+		$result = Splecheh_InterpunctionBackend::check( $payload['sentences'], $payload['language'] );
+	} catch ( \Throwable $exception ) {
+		Splecheh_Logs::addLog( 'interpunction', 'Interpunction test failed', [ 'error' => $exception->getMessage() ] );
+		wp_send_json_error(
+			[
+				'payload' => $payload,
+				'message' => $exception->getMessage(),
+			]
+		);
+	}
 
 	if ( is_wp_error( $result ) ) {
+		Splecheh_Logs::addLog( 'interpunction', 'Interpunction test failed', [ 'error' => $result->get_error_message() ] );
 		wp_send_json_error(
 			[
 				'payload' => $payload,
@@ -1129,6 +1143,8 @@ function splecheh_ajax_interpunction_test(): void {
 			]
 		);
 	}
+
+	Splecheh_Logs::addLog( 'interpunction', 'Interpunction test completed', [] );
 
 	wp_send_json_success(
 		[
