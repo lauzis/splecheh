@@ -165,15 +165,20 @@ class Splecheh_SpellCheckReport {
 	}
 
 	/**
-	 * Overwrites a post's saved report JSON in place (does not change the report's UUID or checked-at meta).
+	 * Overwrites a post's saved report JSON in place (does not change the report's UUID or checked-at meta),
+	 * and refreshes the stored unresolved issue count meta to match.
 	 */
 	public static function update_report( int $post_id, array $report ): bool {
 		$path = self::get_report_path( $post_id );
 		if ( ! $path ) {
 			return false;
 		}
-		$json = wp_json_encode( $report, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE );
-		return file_put_contents( $path, $json ) !== false;
+		$json  = wp_json_encode( $report, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE );
+		$saved = file_put_contents( $path, $json ) !== false;
+		if ( $saved ) {
+			update_post_meta( $post_id, '_splecheh_issue_count', self::count_unresolved_in_report( $report ) );
+		}
+		return $saved;
 	}
 
 	/**
@@ -181,7 +186,17 @@ class Splecheh_SpellCheckReport {
 	 */
 	public static function count_unresolved( int $post_id ): int {
 		$report = self::get_report( $post_id );
-		if ( ! $report || empty( $report['errors'] ) ) {
+		if ( ! $report ) {
+			return 0;
+		}
+		return self::count_unresolved_in_report( $report );
+	}
+
+	/**
+	 * Counts the unresolved issues in an already-loaded report array.
+	 */
+	private static function count_unresolved_in_report( array $report ): int {
+		if ( empty( $report['errors'] ) ) {
 			return 0;
 		}
 		$count = 0;
@@ -453,6 +468,7 @@ class Splecheh_SpellCheckReport {
 		update_post_meta( $post_id, '_splecheh_report_uuid', $uuid );
 		update_post_meta( $post_id, '_splecheh_checked_at', gmdate( 'Y-m-d H:i:s' ) );
 		update_post_meta( $post_id, '_splecheh_version', SPLECHEH_VERSION );
+		update_post_meta( $post_id, '_splecheh_issue_count', self::count_unresolved_in_report( $report ) );
 
 		return true;
 	}

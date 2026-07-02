@@ -85,6 +85,12 @@ if ( ! function_exists( 'update_post_meta' ) ) {
 	}
 }
 
+if ( ! function_exists( 'metadata_exists' ) ) {
+	function metadata_exists( string $meta_type, int $object_id, string $meta_key ): bool {
+		return array_key_exists( $meta_key, $GLOBALS['__splecheh_test_post_meta'][ $object_id ] ?? [] );
+	}
+}
+
 if ( ! function_exists( 'wp_upload_dir' ) ) {
 	function wp_upload_dir(): array {
 		return [
