@@ -66,6 +66,10 @@ Run `composer install` to pull in dev dependencies (PHPUnit), then `composer tes
 
 ## Change log
 
+### --- 0.19.0 ---
+- Added a "Test Interpunction Check" button to the Settings page: runs the configured provider against a fixed set of canned example sentences (using the currently saved Type/Prompt/language settings) and shows the outcome inline, with expandable "Example request" and "Result" sections; on failure, the error message returned by the call is shown instead of a generic failure.
+- Updated the default Interpunction Check Prompt to explicitly document the required `{original, fixed, explanation}` JSON array output format, matching the instructions already sent to OpenAI/Claude/Gemini — so Commandline-type scripts receive the same format guidance in the prompt text.
+
 ### --- 0.18.0 ---
 - Added Interpunction Check: an opt-in, LLM-based punctuation/capitalization check that runs sentence by sentence, separate from the aspell-based Spell Check. New Settings section (Enable, Type — Commandline/OpenAI/Claude/Gemini, Commandline Command, Endpoint, Access Key, Prompt), a standalone "Interpunction Check" admin page (paginated table with post type/search filters, Run Now/Re-run, status/issues columns), and a Details page per post listing each flagged sentence with Fix / Ignore in post / Ignore always actions and bulk actions.
 - The Commandline type calls a locally-configured shell command with the sentences/prompt as a JSON parameter and expects a JSON array of `{original, fixed, explanation}` on stdout, keeping LLM API keys out of WordPress; see `bin/interpunction-check.sh` for the reference contract. OpenAI/Claude/Gemini are called directly via `wp_remote_post`.

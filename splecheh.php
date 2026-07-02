@@ -3,7 +3,7 @@
  * Plugin Name: Splecheh - WordPress spellcheck plugin
  * Plugin URI:  https://github.com/lauzis/splecheh
  * Description: Run spell check on all articles and post types to find spelling errors.
- * Version:     0.18.0
+ * Version:     0.19.0
  * Author:      Aivars Lauzis
  * Text Domain: splecheh
  * License:     MIT
@@ -14,7 +14,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'SPLECHEH_VERSION', '0.18.0' );
+define( 'SPLECHEH_VERSION', '0.19.0' );
 define( 'SPLECHEH_DIR', plugin_dir_path( __FILE__ ) );
 define( 'SPLECHEH_LOG_PATH', SPLECHEH_DIR . 'logs' );
 define( 'SPLECHEH_PLUGIN_FILE', __FILE__ );
@@ -85,6 +85,7 @@ add_action( 'admin_enqueue_scripts', 'splecheh_enqueue_spellcheck_assets' );
 add_action( 'admin_enqueue_scripts', 'splecheh_enqueue_details_assets' );
 add_action( 'admin_enqueue_scripts', 'splecheh_enqueue_interpunction_assets' );
 add_action( 'admin_enqueue_scripts', 'splecheh_enqueue_interpunction_details_assets' );
+add_action( 'admin_enqueue_scripts', 'splecheh_enqueue_settings_assets' );
 add_action( 'wp_ajax_splecheh_dismiss_notification', [ 'Splecheh_NotificationManager', 'handle_dismiss' ] );
 add_action( 'wp_ajax_splecheh_run', 'splecheh_ajax_run_spellcheck' );
 add_action( 'wp_ajax_splecheh_bulk_run', 'splecheh_ajax_bulk_run' );
@@ -99,6 +100,7 @@ add_action( 'wp_ajax_splecheh_interpunction_details_rerun', 'splecheh_ajax_inter
 add_action( 'wp_ajax_splecheh_interpunction_fix', 'splecheh_ajax_interpunction_fix' );
 add_action( 'wp_ajax_splecheh_interpunction_ignore_in_post', 'splecheh_ajax_interpunction_ignore_in_post' );
 add_action( 'wp_ajax_splecheh_interpunction_ignore_always', 'splecheh_ajax_interpunction_ignore_always' );
+add_action( 'wp_ajax_splecheh_interpunction_test', 'splecheh_ajax_interpunction_test' );
 add_action( 'carbon_fields_theme_options_container_saved', 'splecheh_sync_bg_cron' );
 
 function splecheh_sync_bg_cron(): void {
@@ -315,9 +317,39 @@ function splecheh_register_settings_fields(): void {
 
 				\Carbon_Fields\Field::make( 'textarea', 'splecheh_interpunction_prompt', __( 'Prompt', 'splecheh' ) )
 					->set_default_value( Splecheh_InterpunctionReport::DEFAULT_PROMPT )
-					->set_help_text( __( 'Instruction sent to the LLM. Use {language} as a placeholder for the post\'s language.', 'splecheh' ) ),
+					->set_help_text( __( 'Instruction sent to the LLM. Use {language} as a placeholder for the post\'s language. Must tell the LLM to output only a JSON array of {original, fixed, explanation} objects, one per input sentence and in the same order — see the default value for the expected wording.', 'splecheh' ) ),
+
+				\Carbon_Fields\Field::make( 'html', 'splecheh_interpunction_test' )
+					->set_html( 'splecheh_render_interpunction_test_field' ),
 			]
 		);
+}
+
+/**
+ * Renders the "Test Interpunction Check" button and expandable request/result
+ * sections on the Settings page.
+ */
+function splecheh_render_interpunction_test_field(): string {
+	ob_start();
+	?>
+	<button type="button" id="splecheh-interpunction-test-button" class="button">
+		<?php esc_html_e( 'Test Interpunction Check', 'splecheh' ); ?>
+	</button>
+	<span class="spinner" style="float: none; display: none; vertical-align: middle;"></span>
+
+	<div id="splecheh-interpunction-test-message" class="notice" style="display: none; margin-top: 10px;"><p></p></div>
+
+	<details style="margin-top: 10px;">
+		<summary><?php esc_html_e( 'Example request', 'splecheh' ); ?></summary>
+		<pre id="splecheh-interpunction-test-request" style="white-space: pre-wrap;"></pre>
+	</details>
+
+	<details style="margin-top: 10px;">
+		<summary><?php esc_html_e( 'Result', 'splecheh' ); ?></summary>
+		<pre id="splecheh-interpunction-test-result" style="white-space: pre-wrap;"></pre>
+	</details>
+	<?php
+	return (string) ob_get_clean();
 }
 
 /**
@@ -546,6 +578,33 @@ function splecheh_enqueue_interpunction_assets( string $hook ): void {
 				'selectRows'  => __( 'Select at least one post.', 'splecheh' ),
 				'bulkChecked' => __( 'post(s) checked.', 'splecheh' ),
 				'bulkFailed'  => __( 'failed.', 'splecheh' ),
+			],
+		]
+	);
+}
+
+function splecheh_enqueue_settings_assets(): void {
+	$page = isset( $_GET['page'] ) ? (string) wp_unslash( $_GET['page'] ) : '';
+	if ( $page !== 'crb_settings.php' ) {
+		return;
+	}
+
+	wp_enqueue_script(
+		'splecheh-interpunction-test',
+		plugins_url( 'assets/js/interpunction-test.js', SPLECHEH_PLUGIN_FILE ),
+		[],
+		SPLECHEH_VERSION,
+		true
+	);
+	wp_localize_script(
+		'splecheh-interpunction-test',
+		'splechehInterpunctionTest',
+		[
+			'ajaxUrl' => admin_url( 'admin-ajax.php' ),
+			'nonce'   => wp_create_nonce( 'splecheh_interpunction_test' ),
+			'i18n'    => [
+				'testing'       => __( 'Testing…', 'splecheh' ),
+				'requestFailed' => __( 'Test request failed. Please try again.', 'splecheh' ),
 			],
 		]
 	);
@@ -1043,6 +1102,38 @@ function splecheh_ajax_interpunction_bulk_run(): void {
 			'results'       => $results,
 			'success_count' => $success_count,
 			'failure_count' => $failure_count,
+		]
+	);
+}
+
+/**
+ * Runs the "Test Interpunction Check" button on the Settings page: builds a fixed
+ * example payload from the currently saved settings and canned sentences, sends it
+ * through the configured provider, and returns both the payload and the outcome.
+ */
+function splecheh_ajax_interpunction_test(): void {
+	check_ajax_referer( 'splecheh_interpunction_test', 'nonce' );
+
+	if ( ! current_user_can( 'manage_options' ) ) {
+		wp_send_json_error( [ 'message' => __( 'Insufficient permissions.', 'splecheh' ) ], 403 );
+	}
+
+	$payload = Splecheh_InterpunctionBackend::build_test_payload();
+	$result  = Splecheh_InterpunctionBackend::check( $payload['sentences'], $payload['language'] );
+
+	if ( is_wp_error( $result ) ) {
+		wp_send_json_error(
+			[
+				'payload' => $payload,
+				'message' => $result->get_error_message(),
+			]
+		);
+	}
+
+	wp_send_json_success(
+		[
+			'payload' => $payload,
+			'result'  => $result,
 		]
 	);
 }

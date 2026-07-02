@@ -6,7 +6,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class Splecheh_InterpunctionReport {
 
-	const DEFAULT_PROMPT = 'You are a professional {language} editor. Your only task is to fix the punctuation and capitalization of the provided text. Keep the original text content exactly as is. Output only the corrected text.';
+	const DEFAULT_PROMPT = 'You are a professional {language} editor. Your only task is to fix the punctuation and capitalization of the provided text. Keep the original text content exactly as is. Respond with only a JSON array, no other text, where each item is {"original": "...", "fixed": "...", "explanation": "..."} for every input sentence, in the same order as given. The input sentences are given as a JSON array.';
 
 	/**
 	 * Runs the interpunction check on a post, saves the JSON report, and updates post meta.
