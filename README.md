@@ -41,6 +41,9 @@ Run `composer install` to pull in dev dependencies (PHPUnit), then `composer tes
 
 ## Change log
 
+### --- 0.17.0 ---
+- Added a "Show also posts with 0 spellcheck issues" checkbox filter to the Spell Check table, unchecked by default. By default the table now only shows posts that are outdated/never checked or have at least one unresolved issue; ticking the checkbox shows all posts from the enabled post types, as before. The filter state persists across pagination and sorting like the post type/search filters.
+
 ### --- 0.16.2 ---
 - Fixed the "Re-run Spell Check" bulk action doing nothing on Apply: the post type/search filter bar rendered its own nested `<form>` inside the Spell Check table's form, which the browser's HTML parser resolved by closing the outer form early — leaving the bulk action select, checkboxes, and Apply button outside of it in the DOM, so the JS click handler never saw the click. The filter bar now reuses the table's form instead of nesting a second one.
 
