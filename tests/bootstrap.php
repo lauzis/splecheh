@@ -132,6 +132,13 @@ if ( ! function_exists( 'update_option' ) ) {
 	}
 }
 
+if ( ! function_exists( 'get_locale' ) ) {
+	function get_locale(): string {
+		return 'en_US';
+	}
+}
+
 require_once dirname( __DIR__ ) . '/classes/SpellCheckReport.php';
 require_once dirname( __DIR__ ) . '/classes/InterpunctionIgnoreList.php';
 require_once dirname( __DIR__ ) . '/classes/InterpunctionReport.php';
+require_once dirname( __DIR__ ) . '/classes/InterpunctionBackend.php';

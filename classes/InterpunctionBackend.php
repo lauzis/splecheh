@@ -7,6 +7,32 @@ if ( ! defined( 'ABSPATH' ) ) {
 class Splecheh_InterpunctionBackend {
 
 	/**
+	 * Canned sentences used by the Settings page "Test Interpunction Check" button,
+	 * chosen to contain obvious punctuation/capitalization issues.
+	 *
+	 * @var string[]
+	 */
+	const TEST_SENTENCES = [
+		'the quick brown fox jumps over the lazy dog',
+		'is this correct  ,she asked',
+		'we visited paris,london and berlin last summer',
+	];
+
+	/**
+	 * Builds the example payload used by the Settings page "Test Interpunction Check"
+	 * button: the currently configured language and prompt, plus canned test sentences.
+	 */
+	public static function build_test_payload(): array {
+		$language = Splecheh_SpellCheckReport::get_language();
+
+		return [
+			'language'  => $language,
+			'prompt'    => str_replace( '{language}', $language, self::get_prompt() ),
+			'sentences' => self::TEST_SENTENCES,
+		];
+	}
+
+	/**
 	 * Sends $sentences to the configured provider and returns the parsed
 	 * per-sentence {original, fixed, explanation} results, in the same order.
 	 *
