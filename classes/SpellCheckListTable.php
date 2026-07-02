@@ -66,11 +66,12 @@ class Splecheh_SpellCheckListTable extends WP_List_Table {
 			$post_types = $enabled_types;
 		}
 
-		$per_page = 20;
-		$paged    = $this->get_pagenum();
-		$search   = sanitize_text_field( wp_unslash( $_GET['s'] ?? '' ) );
-		$orderby  = sanitize_key( wp_unslash( $_GET['orderby'] ?? '' ) );
-		$order    = strtoupper( sanitize_key( wp_unslash( $_GET['order'] ?? '' ) ) ) === 'DESC' ? 'DESC' : 'ASC';
+		$per_page         = 20;
+		$paged            = $this->get_pagenum();
+		$search           = sanitize_text_field( wp_unslash( $_GET['s'] ?? '' ) );
+		$orderby          = sanitize_key( wp_unslash( $_GET['orderby'] ?? '' ) );
+		$order            = strtoupper( sanitize_key( wp_unslash( $_GET['order'] ?? '' ) ) ) === 'DESC' ? 'DESC' : 'ASC';
+		$show_zero_issues = ! empty( $_GET['show_zero_issues'] );
 
 		$args = [
 			'post_type'      => $post_types,
@@ -98,7 +99,18 @@ class Splecheh_SpellCheckListTable extends WP_List_Table {
 			$args['s'] = $search;
 		}
 
-		$query       = new WP_Query( $args );
+		if ( ! $show_zero_issues ) {
+			add_filter( 'posts_join', [ $this, 'filter_join_outdated_or_issues' ] );
+			add_filter( 'posts_where', [ $this, 'filter_where_outdated_or_issues' ] );
+		}
+
+		$query = new WP_Query( $args );
+
+		if ( ! $show_zero_issues ) {
+			remove_filter( 'posts_join', [ $this, 'filter_join_outdated_or_issues' ] );
+			remove_filter( 'posts_where', [ $this, 'filter_where_outdated_or_issues' ] );
+		}
+
 		$this->items = $query->posts;
 
 		$this->set_pagination_args(
@@ -108,6 +120,49 @@ class Splecheh_SpellCheckListTable extends WP_List_Table {
 				'total_pages' => $query->max_num_pages,
 			]
 		);
+	}
+
+	/**
+	 * Joins the meta needed to identify posts that are outdated/never-checked or
+	 * have unresolved issues, so that state can be filtered on in SQL. Used by
+	 * prepare_items() to hide up-to-date posts with 0 issues unless requested.
+	 */
+	public function filter_join_outdated_or_issues( string $join ): string {
+		global $wpdb;
+
+		$join .= " LEFT JOIN {$wpdb->postmeta} AS splecheh_pm_checked ON ( splecheh_pm_checked.post_id = {$wpdb->posts}.ID AND splecheh_pm_checked.meta_key = '_splecheh_checked_at' )";
+		$join .= " LEFT JOIN {$wpdb->postmeta} AS splecheh_pm_issues ON ( splecheh_pm_issues.post_id = {$wpdb->posts}.ID AND splecheh_pm_issues.meta_key = '_splecheh_issue_count' )";
+
+		if ( splecheh_invalidate_on_version_change_enabled() ) {
+			$join .= " LEFT JOIN {$wpdb->postmeta} AS splecheh_pm_version ON ( splecheh_pm_version.post_id = {$wpdb->posts}.ID AND splecheh_pm_version.meta_key = '_splecheh_version' )";
+		}
+
+		return $join;
+	}
+
+	/**
+	 * Restricts results to posts that are outdated/never-checked or have at
+	 * least one unresolved issue, mirroring Splecheh_SpellCheckReport::is_outdated().
+	 */
+	public function filter_where_outdated_or_issues( string $where ): string {
+		global $wpdb;
+
+		$conditions   = [
+			'splecheh_pm_checked.meta_value IS NULL',
+			"splecheh_pm_checked.meta_value < {$wpdb->posts}.post_modified_gmt",
+			"CAST( COALESCE( splecheh_pm_issues.meta_value, '0' ) AS UNSIGNED ) >= 1",
+		];
+
+		if ( splecheh_invalidate_on_version_change_enabled() ) {
+			$conditions[] = $wpdb->prepare(
+				'( splecheh_pm_version.meta_value IS NULL OR splecheh_pm_version.meta_value != %s )',
+				SPLECHEH_VERSION
+			);
+		}
+
+		$where .= ' AND ( ' . implode( ' OR ', $conditions ) . ' )';
+
+		return $where;
 	}
 
 	protected function column_default( $item, $column_name ): string {
@@ -238,9 +293,10 @@ class Splecheh_SpellCheckListTable extends WP_List_Table {
 	 * Renders the post-type filter dropdown and search box above the table.
 	 */
 	public function render_filters(): void {
-		$enabled_types  = splecheh_get_enabled_post_types();
-		$current_type   = sanitize_key( wp_unslash( $_GET['post_type_filter'] ?? '' ) );
-		$current_search = sanitize_text_field( wp_unslash( $_GET['s'] ?? '' ) );
+		$enabled_types    = splecheh_get_enabled_post_types();
+		$current_type     = sanitize_key( wp_unslash( $_GET['post_type_filter'] ?? '' ) );
+		$current_search   = sanitize_text_field( wp_unslash( $_GET['s'] ?? '' ) );
+		$show_zero_issues = ! empty( $_GET['show_zero_issues'] );
 		?>
 		<input type="hidden" name="page" value="splecheh">
 		<div class="alignleft actions">
@@ -258,6 +314,10 @@ class Splecheh_SpellCheckListTable extends WP_List_Table {
 				</option>
 				<?php endforeach; ?>
 			</select>
+			<label for="splecheh-show-zero-issues">
+				<input type="checkbox" id="splecheh-show-zero-issues" name="show_zero_issues" value="1" <?php checked( $show_zero_issues ); ?>>
+				<?php esc_html_e( 'Show also posts with 0 spellcheck issues', 'splecheh' ); ?>
+			</label>
 			<input type="submit" class="button" value="<?php esc_attr_e( 'Filter', 'splecheh' ); ?>">
 		</div>
 		<div class="alignright">
