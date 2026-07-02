@@ -119,4 +119,19 @@ if ( ! function_exists( 'wp_json_encode' ) ) {
 	}
 }
 
+if ( ! function_exists( 'get_option' ) ) {
+	function get_option( string $name, $default = false ) {
+		return $GLOBALS['__splecheh_test_options'][ $name ] ?? $default;
+	}
+}
+
+if ( ! function_exists( 'update_option' ) ) {
+	function update_option( string $name, $value, $autoload = null ): bool {
+		$GLOBALS['__splecheh_test_options'][ $name ] = $value;
+		return true;
+	}
+}
+
 require_once dirname( __DIR__ ) . '/classes/SpellCheckReport.php';
+require_once dirname( __DIR__ ) . '/classes/InterpunctionIgnoreList.php';
+require_once dirname( __DIR__ ) . '/classes/InterpunctionReport.php';

@@ -7,6 +7,36 @@ if ( ! defined( 'ABSPATH' ) ) {
 <div class="wrap">
 	<h1><?php esc_html_e( 'Help', 'splecheh' ); ?></h1>
 
+	<h2><?php esc_html_e( 'Interpunction Check', 'splecheh' ); ?></h2>
+
+	<p>
+		<?php esc_html_e( 'Interpunction Check uses an LLM to fix punctuation and capitalization, sentence by sentence, separately from the aspell-based Spell Check. It is off by default — enable it under Settings > Interpunction Check.', 'splecheh' ); ?>
+	</p>
+
+	<p><?php esc_html_e( 'Settings:', 'splecheh' ); ?></p>
+	<ul style="list-style:disc;padding-left:1.5em;">
+		<li><?php esc_html_e( 'Enable Interpunction Check — shows the "Interpunction Check" page in the menu.', 'splecheh' ); ?></li>
+		<li><?php esc_html_e( 'Type — how the request is made: Commandline (local model/script), OpenAI, Claude, or Gemini.', 'splecheh' ); ?></li>
+		<li><?php esc_html_e( 'Commandline Command — shown only for the Commandline type.', 'splecheh' ); ?></li>
+		<li><?php esc_html_e( 'Endpoint — optional override of the default API URL; shown only for OpenAI/Claude/Gemini.', 'splecheh' ); ?></li>
+		<li><?php esc_html_e( 'Access Key — API token for OpenAI/Claude/Gemini; not needed for Commandline.', 'splecheh' ); ?></li>
+		<li><?php esc_html_e( 'Prompt — instruction sent to the LLM; use {language} as a placeholder for the post\'s language.', 'splecheh' ); ?></li>
+	</ul>
+
+	<h3><?php esc_html_e( 'Commandline Contract', 'splecheh' ); ?></h3>
+
+	<p>
+		<?php esc_html_e( 'For the Commandline type, Splecheh runs the configured shell command with a single argument: a JSON object of the shape {language, prompt, sentences}. This keeps API keys out of WordPress — the script is responsible for its own credentials.', 'splecheh' ); ?>
+	</p>
+
+	<p><?php esc_html_e( 'The script must print a JSON array to stdout, one item per input sentence and in the same order:', 'splecheh' ); ?></p>
+
+	<pre style="background:#1e1e1e;color:#d4d4d4;padding:1em;border-radius:4px;font-size:13px;overflow:auto;">[{"original": "...", "fixed": "...", "explanation": "..."}, ...]</pre>
+
+	<p>
+		<?php esc_html_e( 'A non-zero exit code is treated as a failure, with stderr shown as the error message. See bin/interpunction-check.sh in the plugin folder for a working (dummy) reference implementation of this contract.', 'splecheh' ); ?>
+	</p>
+
 	<h2><?php esc_html_e( 'Setting Up a Real Cron Job', 'splecheh' ); ?></h2>
 
 	<p>

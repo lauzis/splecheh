@@ -10,6 +10,31 @@ Editors and content managers who need to maintain writing quality across a WordP
 - Scans all posts and custom post types for spelling errors.
 - Lists all spellcheck issues in a central admin view.
 - Admin menu accessible to editors (and above).
+- Optional Interpunction Check: uses an LLM to fix punctuation and capitalization, sentence by sentence (see below).
+
+## Interpunction Check
+Interpunction Check is a separate, opt-in feature (Settings > Interpunction Check, disabled by default) that reviews punctuation and capitalization using an LLM instead of a dictionary — sentence by sentence, with the same Run Now/Re-run, report/status tracking, and Details page (Fix / Ignore in post / Ignore always) as Spell Check.
+
+Settings:
+- **Enable Interpunction Check** — shows the "Interpunction Check" page in the admin menu.
+- **Type** — how the request is made: `Commandline - Local model`, `OpenAI`, `Claude`, or `Gemini`.
+- **Commandline Command** — shown only for the Commandline type (see contract below).
+- **Endpoint** — optional override of the default API URL; shown only for OpenAI/Claude/Gemini.
+- **Access Key** — API token for OpenAI/Claude/Gemini; not needed (or stored) for Commandline.
+- **Prompt** — instruction sent to the LLM; defaults to `You are a professional {language} editor. Your only task is to fix the punctuation and capitalization of the provided text. Keep the original text content exactly as is. Output only the corrected text.` — `{language}` is replaced with the post's language.
+
+### Commandline contract
+For the Commandline type, Splecheh runs the configured shell command with a single, shell-escaped argument: a JSON object `{"language": "...", "prompt": "...", "sentences": ["...", ...]}`. This keeps API keys out of WordPress — the script owns its own credentials (e.g. to call a locally-hosted model).
+
+The script must print a JSON array to stdout, one item per input sentence and in the same order:
+
+```
+[{"original": "...", "fixed": "...", "explanation": "..."}, ...]
+```
+
+A non-zero exit code is treated as a failure, with stderr shown as the error message. See [`bin/interpunction-check.sh`](bin/interpunction-check.sh) for a working (dummy, pass-through) reference implementation of this contract.
+
+OpenAI/Claude/Gemini are called directly via `wp_remote_post` (no composer SDK) using each provider's default chat/completion endpoint.
 
 ## Aspell dependency
 Spell checking is performed by [`tigitz/php-spellchecker`](https://github.com/tigitz/php-spellchecker), which shells out to the system `aspell` command (or uses the PHP `pspell` extension, when installed, which is itself backed by Aspell). Each language needs its own Aspell wordlist package installed on the server — it is **not** bundled with the plugin or with Aspell itself.
@@ -40,6 +65,11 @@ Built with the assistance of [CodeRabbit](https://coderabbit.ai) for code review
 Run `composer install` to pull in dev dependencies (PHPUnit), then `composer test` to run the test suite. The committed `vendor/` folder is production-only (no dev dependencies), so the plugin works as-is without running Composer.
 
 ## Change log
+
+### --- 0.18.0 ---
+- Added Interpunction Check: an opt-in, LLM-based punctuation/capitalization check that runs sentence by sentence, separate from the aspell-based Spell Check. New Settings section (Enable, Type — Commandline/OpenAI/Claude/Gemini, Commandline Command, Endpoint, Access Key, Prompt), a standalone "Interpunction Check" admin page (paginated table with post type/search filters, Run Now/Re-run, status/issues columns), and a Details page per post listing each flagged sentence with Fix / Ignore in post / Ignore always actions and bulk actions.
+- The Commandline type calls a locally-configured shell command with the sentences/prompt as a JSON parameter and expects a JSON array of `{original, fixed, explanation}` on stdout, keeping LLM API keys out of WordPress; see `bin/interpunction-check.sh` for the reference contract. OpenAI/Claude/Gemini are called directly via `wp_remote_post`.
+- Reports are saved as JSON under `wp-content/uploads/splecheh-interpunction/`, with per-post meta (issue count, checked-at, plugin version) and outdated detection mirroring Spell Check.
 
 ### --- 0.17.0 ---
 - Added a "Show also posts with 0 spellcheck issues" checkbox filter to the Spell Check table, unchecked by default. By default the table now only shows posts that are outdated/never checked or have at least one unresolved issue; ticking the checkbox shows all posts from the enabled post types, as before. The filter state persists across pagination and sorting like the post type/search filters.
