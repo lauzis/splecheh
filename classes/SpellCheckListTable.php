@@ -242,31 +242,29 @@ class Splecheh_SpellCheckListTable extends WP_List_Table {
 		$current_type   = sanitize_key( wp_unslash( $_GET['post_type_filter'] ?? '' ) );
 		$current_search = sanitize_text_field( wp_unslash( $_GET['s'] ?? '' ) );
 		?>
-		<form method="get" action="">
-			<input type="hidden" name="page" value="splecheh">
-			<div class="alignleft actions">
-				<label for="splecheh-type-filter" class="screen-reader-text"><?php esc_html_e( 'Filter by post type', 'splecheh' ); ?></label>
-				<select id="splecheh-type-filter" name="post_type_filter">
-					<option value=""><?php esc_html_e( 'All post types', 'splecheh' ); ?></option>
-					<?php foreach ( $enabled_types as $type_slug ) :
-						$pt = get_post_type_object( $type_slug );
-						if ( ! $pt ) {
-							continue;
-						}
-					?>
-					<option value="<?php echo esc_attr( $type_slug ); ?>" <?php selected( $current_type, $type_slug ); ?>>
-						<?php echo esc_html( $pt->label ); ?>
-					</option>
-					<?php endforeach; ?>
-				</select>
-				<input type="submit" class="button" value="<?php esc_attr_e( 'Filter', 'splecheh' ); ?>">
-			</div>
-			<div class="alignright">
-				<label for="splecheh-search" class="screen-reader-text"><?php esc_html_e( 'Search posts', 'splecheh' ); ?></label>
-				<input type="search" id="splecheh-search" name="s" value="<?php echo esc_attr( $current_search ); ?>" placeholder="<?php esc_attr_e( 'Search posts…', 'splecheh' ); ?>">
-				<input type="submit" class="button" value="<?php esc_attr_e( 'Search', 'splecheh' ); ?>">
-			</div>
-		</form>
+		<input type="hidden" name="page" value="splecheh">
+		<div class="alignleft actions">
+			<label for="splecheh-type-filter" class="screen-reader-text"><?php esc_html_e( 'Filter by post type', 'splecheh' ); ?></label>
+			<select id="splecheh-type-filter" name="post_type_filter">
+				<option value=""><?php esc_html_e( 'All post types', 'splecheh' ); ?></option>
+				<?php foreach ( $enabled_types as $type_slug ) :
+					$pt = get_post_type_object( $type_slug );
+					if ( ! $pt ) {
+						continue;
+					}
+				?>
+				<option value="<?php echo esc_attr( $type_slug ); ?>" <?php selected( $current_type, $type_slug ); ?>>
+					<?php echo esc_html( $pt->label ); ?>
+				</option>
+				<?php endforeach; ?>
+			</select>
+			<input type="submit" class="button" value="<?php esc_attr_e( 'Filter', 'splecheh' ); ?>">
+		</div>
+		<div class="alignright">
+			<label for="splecheh-search" class="screen-reader-text"><?php esc_html_e( 'Search posts', 'splecheh' ); ?></label>
+			<input type="search" id="splecheh-search" name="s" value="<?php echo esc_attr( $current_search ); ?>" placeholder="<?php esc_attr_e( 'Search posts…', 'splecheh' ); ?>">
+			<input type="submit" class="button" value="<?php esc_attr_e( 'Search', 'splecheh' ); ?>">
+		</div>
 		<?php
 	}
 
