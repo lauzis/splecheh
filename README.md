@@ -41,6 +41,9 @@ Run `composer install` to pull in dev dependencies (PHPUnit), then `composer tes
 
 ## Change log
 
+### --- 0.16.2 ---
+- Fixed the "Re-run Spell Check" bulk action doing nothing on Apply: the post type/search filter bar rendered its own nested `<form>` inside the Spell Check table's form, which the browser's HTML parser resolved by closing the outer form early — leaving the bulk action select, checkboxes, and Apply button outside of it in the DOM, so the JS click handler never saw the click. The filter bar now reuses the table's form instead of nesting a second one.
+
 ### --- 0.16.1 ---
 - Removed the redundant "Details" column from the Spell Check table; the Details link is still available in the Actions column.
 
