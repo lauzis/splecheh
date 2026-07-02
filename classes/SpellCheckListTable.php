@@ -29,7 +29,6 @@ class Splecheh_SpellCheckListTable extends WP_List_Table {
 			'status'       => __( 'Status', 'splecheh' ),
 			'issues'       => __( 'Issues', 'splecheh' ),
 			'report'       => __( 'Report', 'splecheh' ),
-			'details'      => __( 'Details', 'splecheh' ),
 			'actions'      => __( 'Actions', 'splecheh' ),
 		];
 	}
@@ -141,9 +140,6 @@ class Splecheh_SpellCheckListTable extends WP_List_Table {
 			case 'report':
 				return $this->column_report( $item );
 
-			case 'details':
-				return $this->column_details( $item );
-
 			case 'actions':
 				return $this->column_actions( $item );
 		}
@@ -187,30 +183,6 @@ class Splecheh_SpellCheckListTable extends WP_List_Table {
 			return '&mdash;';
 		}
 		return '<a href="' . esc_url( $url ) . '" target="_blank" rel="noopener">' . esc_html__( 'View Report', 'splecheh' ) . '</a>';
-	}
-
-	protected function column_details( WP_Post $item ): string {
-		if ( ! Splecheh_SpellCheckReport::get_report_url( $item->ID ) ) {
-			return '&mdash;';
-		}
-
-		$details_url = add_query_arg(
-			[
-				'page'    => 'splecheh-details',
-				'post_id' => $item->ID,
-			],
-			admin_url( 'admin.php' )
-		);
-
-		return sprintf(
-			'<a class="button button-small" href="%s" target="_blank" rel="noopener">%s</a>',
-			esc_url( $details_url ),
-			sprintf(
-				/* translators: %d: number of unresolved spelling issues */
-				esc_html__( 'Details (%d)', 'splecheh' ),
-				Splecheh_SpellCheckReport::count_unresolved( $item->ID )
-			)
-		);
 	}
 
 	protected function column_actions( WP_Post $item ): string {

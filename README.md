@@ -41,6 +41,9 @@ Run `composer install` to pull in dev dependencies (PHPUnit), then `composer tes
 
 ## Change log
 
+### --- 0.16.1 ---
+- Removed the redundant "Details" column from the Spell Check table; the Details link is still available in the Actions column.
+
 ### --- 0.16.0 ---
 - Added an "Issues" column to the Spell Check table showing each post's unresolved issue count, sortable so posts can be ordered by how many issues they have.
 - The unresolved issue count is now stored in a `_splecheh_issue_count` post meta field, kept in sync whenever a report is written (manual/bulk/Details re-run, background cron) or an issue is resolved via Fix/Ignore. Posts checked before this field existed show "—" until rechecked, the same as posts that have never been checked.
