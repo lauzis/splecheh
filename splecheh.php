@@ -129,15 +129,6 @@ function splecheh_register_menu(): void {
 		'splecheh_page_spell_check'
 	);
 
-	add_submenu_page(
-		'splecheh',
-		__( 'Help', 'splecheh' ),
-		__( 'Help', 'splecheh' ),
-		'edit_posts',
-		'splecheh-help',
-		'splecheh_page_help'
-	);
-
 	if ( splecheh_interpunction_enabled() ) {
 		add_submenu_page(
 			'splecheh',
@@ -148,6 +139,15 @@ function splecheh_register_menu(): void {
 			'splecheh_page_interpunction_check'
 		);
 	}
+
+	add_submenu_page(
+		'splecheh',
+		__( 'Help', 'splecheh' ),
+		__( 'Help', 'splecheh' ),
+		'edit_posts',
+		'splecheh-help',
+		'splecheh_page_help'
+	);
 
 	if ( splecheh_logs_enabled() ) {
 		add_submenu_page(
