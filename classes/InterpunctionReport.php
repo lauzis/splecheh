@@ -39,6 +39,8 @@ class Splecheh_InterpunctionReport {
 			'post_title' => $post->post_title,
 			'checked_at' => gmdate( 'c' ),
 			'language'   => $language,
+			'provider'   => Splecheh_InterpunctionBackend::get_type(),
+			'model'      => Splecheh_InterpunctionBackend::get_model_label(),
 			'issues'     => $issues,
 		];
 

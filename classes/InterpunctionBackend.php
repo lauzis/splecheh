@@ -84,10 +84,17 @@ class Splecheh_InterpunctionBackend {
 	 * Sends $sentences to the configured provider and returns the parsed
 	 * per-sentence {original, fixed, explanation} results, in the same order.
 	 *
-	 * @param string[] $sentences
+	 * @param string[]    $sentences
+	 * @param string|null $command_override For the Commandline type only: run this
+	 *                                       command instead of the saved Commandline
+	 *                                       Command, without changing the saved setting.
+	 *                                       Used by the Settings page "Test" button to
+	 *                                       try a different provider/model (e.g. a local
+	 *                                       Ollama model vs `claude`) for one run. Ignored
+	 *                                       for other types.
 	 * @return array|WP_Error
 	 */
-	public static function check( array $sentences, string $language ) {
+	public static function check( array $sentences, string $language, ?string $command_override = null ) {
 		$prompt = str_replace( '{language}', $language, self::get_prompt() );
 
 		switch ( self::get_type() ) {
@@ -99,7 +106,7 @@ class Splecheh_InterpunctionBackend {
 				return self::check_gemini( $sentences, $prompt );
 			case 'commandline':
 			default:
-				return self::check_commandline( $sentences, $language, $prompt );
+				return self::check_commandline( $sentences, $language, $prompt, $command_override );
 		}
 	}
 
@@ -119,8 +126,59 @@ class Splecheh_InterpunctionBackend {
 		return $prompt !== '' ? $prompt : Splecheh_InterpunctionReport::DEFAULT_PROMPT;
 	}
 
-	private static function get_command(): string {
-		return function_exists( 'carbon_get_theme_option' ) ? (string) carbon_get_theme_option( 'splecheh_interpunction_command' ) : '';
+	/**
+	 * Returns the configured Commandline Command, with "--provider ollama --model
+	 * <selection>" appended automatically when the "Local Model" dropdown is set to
+	 * something other than its default ("use the command as typed"). Lets Settings
+	 * offer a simple model picker on top of tools/llm-wrapper.php without needing a
+	 * second free-text field to keep in sync by hand.
+	 */
+	public static function get_command(): string {
+		if ( ! function_exists( 'carbon_get_theme_option' ) ) {
+			return '';
+		}
+		$command = trim( (string) carbon_get_theme_option( 'splecheh_interpunction_command' ) );
+		$model   = trim( (string) carbon_get_theme_option( 'splecheh_interpunction_local_model' ) );
+
+		if ( $command !== '' && $model !== '' ) {
+			$command .= ' --provider ollama --model ' . $model;
+		}
+
+		return $command;
+	}
+
+	/**
+	 * Best-effort label for "which model produced this check", based on the
+	 * currently configured provider — saved into each report so it's visible
+	 * later which model/command generated a given set of fixes. Reflects the
+	 * saved Settings, not any per-request override (e.g. the Settings page
+	 * Test button's command override, which is never saved to a report).
+	 */
+	public static function get_model_label(): string {
+		switch ( self::get_type() ) {
+			case 'openai':
+				return (string) apply_filters( 'splecheh_interpunction_openai_model', 'gpt-4o-mini' );
+			case 'claude':
+				return (string) apply_filters( 'splecheh_interpunction_claude_model', 'claude-3-5-haiku-latest' );
+			case 'gemini':
+				return (string) apply_filters( 'splecheh_interpunction_gemini_model', 'gemini-1.5-flash' );
+			case 'commandline':
+			default:
+				return self::extract_model_label( self::get_command() );
+		}
+	}
+
+	/**
+	 * Pulls a "--model <name>" value out of a Commandline Command string (as used
+	 * by tools/llm-wrapper.php's --model flag); falls back to the command string
+	 * itself when there's no such flag, so e.g. a plain "claude -p" command still
+	 * shows something meaningful instead of nothing.
+	 */
+	public static function extract_model_label( string $command ): string {
+		if ( preg_match( '/--model[= ]+(\S+)/', $command, $matches ) ) {
+			return $matches[1];
+		}
+		return trim( $command );
 	}
 
 	private static function get_endpoint( string $default ): string {

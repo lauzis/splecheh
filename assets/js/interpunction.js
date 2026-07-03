@@ -93,6 +93,49 @@
 				});
 		});
 
+		// Run Now button in the status bar.
+		var runNowBtn = document.getElementById('splecheh-interpunction-run-now');
+		if (runNowBtn) {
+			runNowBtn.addEventListener('click', function () {
+				var spinner = document.getElementById('splecheh-interpunction-run-now-spinner');
+				runNowBtn.disabled = true;
+				if (spinner) spinner.style.display = 'inline-block';
+
+				var formData = new FormData();
+				formData.append('action', 'splecheh_interpunction_run_now');
+				formData.append('nonce', splechehInterpunctionCheck.runNowNonce);
+
+				fetch(splechehInterpunctionCheck.ajaxUrl, { method: 'POST', body: formData })
+					.then(function (r) { return r.json(); })
+					.then(function (data) {
+						runNowBtn.disabled = false;
+						if (spinner) spinner.style.display = 'none';
+
+						if (!data.success) return;
+
+						var result = data.data;
+
+						var elLastRun = document.getElementById('splecheh-interpunction-status-last-run');
+						var elIssues = document.getElementById('splecheh-interpunction-status-issues');
+						var elPending = document.getElementById('splecheh-interpunction-status-pending');
+
+						if (elLastRun && result.last_run) {
+							elLastRun.textContent = 'Last run: ' + result.last_run;
+						}
+						if (elIssues) {
+							elIssues.textContent = 'Issues (last batch): ' + result.issues_found;
+						}
+						if (elPending) {
+							elPending.textContent = 'Pending: ' + result.posts_pending;
+						}
+					})
+					.catch(function () {
+						runNowBtn.disabled = false;
+						if (spinner) spinner.style.display = 'none';
+					});
+			});
+		}
+
 		// Bulk "Re-run Interpunction Check" action.
 		var listForm = document.getElementById('splecheh-interpunction-list-form');
 		if (listForm) {

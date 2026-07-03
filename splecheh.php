@@ -3,7 +3,7 @@
  * Plugin Name: Splecheh - WordPress spellcheck plugin
  * Plugin URI:  https://github.com/lauzis/splecheh
  * Description: Run spell check on all articles and post types to find spelling errors.
- * Version:     0.19.1
+ * Version:     0.20.0
  * Author:      Aivars Lauzis
  * Text Domain: splecheh
  * License:     MIT
@@ -14,7 +14,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'SPLECHEH_VERSION', '0.19.1' );
+define( 'SPLECHEH_VERSION', '0.20.0' );
 define( 'SPLECHEH_DIR', plugin_dir_path( __FILE__ ) );
 define( 'SPLECHEH_LOG_PATH', SPLECHEH_DIR . 'logs' );
 define( 'SPLECHEH_PLUGIN_FILE', __FILE__ );
@@ -28,9 +28,11 @@ require_once SPLECHEH_DIR . 'classes/SplechehCron.php';
 require_once SPLECHEH_DIR . 'classes/InterpunctionIgnoreList.php';
 require_once SPLECHEH_DIR . 'classes/InterpunctionBackend.php';
 require_once SPLECHEH_DIR . 'classes/InterpunctionReport.php';
+require_once SPLECHEH_DIR . 'classes/InterpunctionCron.php';
 
 add_filter( 'cron_schedules', [ 'Splecheh_Cron', 'cron_schedules' ] );
 add_action( Splecheh_Cron::HOOK, [ 'Splecheh_Cron', 'run_batch' ] );
+add_action( Splecheh_InterpunctionCron::HOOK, [ 'Splecheh_InterpunctionCron', 'run_batch' ] );
 
 // Bootstrap Carbon Fields after all themes/plugins are loaded.
 add_action(
@@ -73,10 +75,12 @@ function splecheh_activate(): void {
 	}
 	Splecheh_Logs::addLog( 'plugin', 'Plugin activated', [ 'version' => SPLECHEH_VERSION ] );
 	Splecheh_Cron::sync();
+	Splecheh_InterpunctionCron::sync();
 }
 
 function splecheh_deactivate(): void {
 	Splecheh_Cron::deactivate();
+	Splecheh_InterpunctionCron::deactivate();
 }
 
 add_action( 'admin_notices', [ 'Splecheh_NotificationManager', 'render' ] );
@@ -90,6 +94,7 @@ add_action( 'wp_ajax_splecheh_dismiss_notification', [ 'Splecheh_NotificationMan
 add_action( 'wp_ajax_splecheh_run', 'splecheh_ajax_run_spellcheck' );
 add_action( 'wp_ajax_splecheh_bulk_run', 'splecheh_ajax_bulk_run' );
 add_action( 'wp_ajax_splecheh_run_now', 'splecheh_ajax_run_now' );
+add_action( 'wp_ajax_splecheh_interpunction_run_now', 'splecheh_ajax_interpunction_run_now' );
 add_action( 'wp_ajax_splecheh_details_rerun', 'splecheh_ajax_details_rerun' );
 add_action( 'wp_ajax_splecheh_fix_word', 'splecheh_ajax_fix_word' );
 add_action( 'wp_ajax_splecheh_ignore_in_post', 'splecheh_ajax_ignore_in_post' );
@@ -106,6 +111,7 @@ add_action( 'carbon_fields_theme_options_container_saved', 'splecheh_sync_bg_cro
 
 function splecheh_sync_bg_cron(): void {
 	Splecheh_Cron::sync();
+	Splecheh_InterpunctionCron::sync();
 }
 
 add_action( 'admin_menu', 'splecheh_register_menu' );
@@ -282,7 +288,29 @@ function splecheh_register_settings_fields(): void {
 					->set_help_text( __( 'How the interpunction check request is made.', 'splecheh' ) ),
 
 				\Carbon_Fields\Field::make( 'text', 'splecheh_interpunction_command', __( 'Commandline Command', 'splecheh' ) )
-					->set_help_text( __( 'Shell command to run for the "Commandline - Local model" type, e.g. "claude -p". The JSON parameter — {language, prompt, sentences} — is always appended as a single shell-escaped trailing argument; the command string itself does not support {prompt}-style placeholders. Must print a JSON array of {original, fixed, explanation} on stdout. See bin/interpunction-check.sh for the reference contract. Keeps API keys out of WordPress: the script owns its own credentials.', 'splecheh' ) )
+					->set_default_value( 'php ' . SPLECHEH_DIR . 'tools/llm-wrapper.php' )
+					->set_help_text( __( 'Shell command to run for the "Commandline - Local model" type, e.g. "claude -p" or the bundled tools/llm-wrapper.php. The JSON parameter — {language, prompt, sentences} — is always appended as a single shell-escaped trailing argument; the command string itself does not support {prompt}-style placeholders. Must print a JSON array of {original, fixed, explanation} on stdout. See bin/interpunction-check.sh for the reference contract, or tools/README.md for the bundled wrapper. Keeps API keys out of WordPress: the script owns its own credentials.', 'splecheh' ) )
+					->set_conditional_logic(
+						[
+							[
+								'field' => 'splecheh_interpunction_type',
+								'value' => 'commandline',
+							],
+						]
+					),
+
+				\Carbon_Fields\Field::make( 'select', 'splecheh_interpunction_local_model', __( 'Local Model (via wrapper)', 'splecheh' ) )
+					->set_options(
+						[
+							''            => __( '— Use Commandline Command as-is (e.g. Claude CLI) —', 'splecheh' ),
+							'qwen2.5:3b'  => __( 'Qwen 2.5 3B — fastest, rougher fixes', 'splecheh' ),
+							'qwen2.5:7b'  => __( 'Qwen 2.5 7B — recommended balance', 'splecheh' ),
+							'qwen2.5:14b' => __( 'Qwen 2.5 14B — slower, better quality', 'splecheh' ),
+							'qwen2.5:32b' => __( 'Qwen 2.5 32B — very slow without a GPU', 'splecheh' ),
+						]
+					)
+					->set_default_value( '' )
+					->set_help_text( __( 'Only applies when the Commandline Command above calls tools/llm-wrapper.php: appends "--provider ollama --model <selection>" to it automatically. Requires the model pulled (ollama pull) and tools/local-model.sh start running — see tools/README.md. Leave on the first option to use the command as typed (e.g. the claude CLI).', 'splecheh' ) )
 					->set_conditional_logic(
 						[
 							[
@@ -320,6 +348,34 @@ function splecheh_register_settings_fields(): void {
 					->set_default_value( Splecheh_InterpunctionReport::DEFAULT_PROMPT )
 					->set_help_text( __( 'Instruction sent to the LLM. Use {language} as a placeholder for the post\'s language. Must tell the LLM to output only a JSON array of {original, fixed, explanation} objects, one per input sentence and in the same order — see the default value for the expected wording.', 'splecheh' ) ),
 
+				\Carbon_Fields\Field::make( 'separator', 'splecheh_interpunction_bg_separator', __( 'Background Interpunction Check', 'splecheh' ) ),
+
+				\Carbon_Fields\Field::make( 'checkbox', 'splecheh_interpunction_bg_enabled', __( 'Enable Background Interpunction Check', 'splecheh' ) )
+					->set_help_text( __( 'When enabled, interpunction check runs automatically in the background according to the schedule below. Each run calls the configured LLM provider, so keep the batch size small for slower providers (e.g. a local model without a GPU).', 'splecheh' ) ),
+
+				\Carbon_Fields\Field::make( 'select', 'splecheh_interpunction_bg_interval', __( 'Schedule Interval', 'splecheh' ) )
+					->set_options(
+						[
+							'splecheh_1min'  => __( 'Every 1 minute', 'splecheh' ),
+							'splecheh_5min'  => __( 'Every 5 minutes', 'splecheh' ),
+							'splecheh_10min' => __( 'Every 10 minutes', 'splecheh' ),
+							'splecheh_15min' => __( 'Every 15 minutes', 'splecheh' ),
+							'splecheh_30min' => __( 'Every 30 minutes', 'splecheh' ),
+							'splecheh_1h'    => __( 'Every 1 hour', 'splecheh' ),
+							'splecheh_2h'    => __( 'Every 2 hours', 'splecheh' ),
+							'splecheh_4h'    => __( 'Every 4 hours', 'splecheh' ),
+							'splecheh_8h'    => __( 'Every 8 hours', 'splecheh' ),
+							'splecheh_12h'   => __( 'Every 12 hours', 'splecheh' ),
+							'splecheh_24h'   => __( 'Every 24 hours', 'splecheh' ),
+						]
+					)
+					->set_default_value( 'splecheh_10min' )
+					->set_help_text( __( 'How often the background interpunction check should run.', 'splecheh' ) ),
+
+				\Carbon_Fields\Field::make( 'text', 'splecheh_interpunction_bg_batch_size', __( 'Batch Size', 'splecheh' ) )
+					->set_default_value( '1' )
+					->set_help_text( __( 'Number of posts to check per background run. Default: 1 — each post is a full LLM request, so this is deliberately smaller than the Spell Check batch size, especially for local/slower models.', 'splecheh' ) ),
+
 				\Carbon_Fields\Field::make( 'html', 'splecheh_interpunction_test' )
 					->set_html( 'splecheh_render_interpunction_test_field' ),
 			]
@@ -351,6 +407,20 @@ function splecheh_render_interpunction_test_field(): string {
 			<?php esc_html_e( 'Test all sentences (default: first 5) — this run only, not saved', 'splecheh' ); ?>
 		</label>
 	</p>
+
+	<?php if ( Splecheh_InterpunctionBackend::get_type() === 'commandline' ) : ?>
+	<p>
+		<label for="splecheh-interpunction-test-command-override"><?php esc_html_e( 'Command override (this test run only, not saved)', 'splecheh' ); ?></label><br>
+		<input
+			type="text"
+			id="splecheh-interpunction-test-command-override"
+			class="regular-text"
+			autocomplete="off"
+			placeholder="<?php echo esc_attr( Splecheh_InterpunctionBackend::get_command() !== '' ? Splecheh_InterpunctionBackend::get_command() : __( 'leave empty to use the saved Commandline Command', 'splecheh' ) ); ?>"
+		>
+		<p class="description"><?php esc_html_e( 'Try a different provider/model for this test only, e.g. "php tools/llm-wrapper.php --provider ollama --model qwen2.5:7b" instead of the saved command. Leave empty to test the saved Commandline Command as-is.', 'splecheh' ); ?></p>
+	</p>
+	<?php endif; ?>
 
 	<button type="button" id="splecheh-interpunction-test-button" class="button">
 		<?php esc_html_e( 'Test Interpunction Check', 'splecheh' ); ?>
@@ -590,6 +660,7 @@ function splecheh_enqueue_interpunction_assets( string $hook ): void {
 			'ajaxUrl'      => admin_url( 'admin-ajax.php' ),
 			'nonce'        => wp_create_nonce( 'splecheh_interpunction_run' ),
 			'bulkRunNonce' => wp_create_nonce( 'splecheh_interpunction_bulk_run' ),
+			'runNowNonce'  => wp_create_nonce( 'splecheh_interpunction_run_now' ),
 			'i18n'         => [
 				'upToDate'    => __( 'Up to date', 'splecheh' ),
 				'viewReport'  => __( 'View Report', 'splecheh' ),
@@ -839,6 +910,31 @@ function splecheh_ajax_run_now(): void {
 	Splecheh_Cron::run_batch();
 
 	$summary = Splecheh_Cron::get_summary();
+
+	wp_send_json_success(
+		[
+			'last_run'      => $summary['last_run']
+				? get_date_from_gmt(
+					gmdate( 'Y-m-d H:i:s', strtotime( $summary['last_run'] ) ),
+					get_option( 'date_format' ) . ' ' . get_option( 'time_format' )
+				)
+				: '',
+			'issues_found'  => (int) $summary['issues_found'],
+			'posts_pending' => (int) $summary['posts_pending'],
+		]
+	);
+}
+
+function splecheh_ajax_interpunction_run_now(): void {
+	check_ajax_referer( 'splecheh_interpunction_run_now', 'nonce' );
+
+	if ( ! current_user_can( 'manage_options' ) ) {
+		wp_send_json_error( __( 'Insufficient permissions.', 'splecheh' ), 403 );
+	}
+
+	Splecheh_InterpunctionCron::run_batch();
+
+	$summary = Splecheh_InterpunctionCron::get_summary();
 
 	wp_send_json_success(
 		[
@@ -1140,14 +1236,15 @@ function splecheh_ajax_interpunction_test(): void {
 		wp_send_json_error( [ 'message' => __( 'Insufficient permissions.', 'splecheh' ) ], 403 );
 	}
 
-	$post_id        = isset( $_POST['post_id'] ) ? absint( $_POST['post_id'] ) : 0;
-	$sentence_limit = ! empty( $_POST['test_all_sentences'] ) ? 0 : null;
-	$payload        = Splecheh_InterpunctionBackend::build_test_payload( $post_id, $sentence_limit );
+	$post_id          = isset( $_POST['post_id'] ) ? absint( $_POST['post_id'] ) : 0;
+	$sentence_limit   = ! empty( $_POST['test_all_sentences'] ) ? 0 : null;
+	$payload          = Splecheh_InterpunctionBackend::build_test_payload( $post_id, $sentence_limit );
+	$command_override = isset( $_POST['command_override'] ) ? trim( sanitize_text_field( wp_unslash( $_POST['command_override'] ) ) ) : '';
 
 	Splecheh_Logs::addLog( 'interpunction', 'Interpunction test started', [] );
 
 	try {
-		$result = Splecheh_InterpunctionBackend::check( $payload['sentences'], $payload['language'] );
+		$result = Splecheh_InterpunctionBackend::check( $payload['sentences'], $payload['language'], $command_override !== '' ? $command_override : null );
 	} catch ( \Throwable $exception ) {
 		Splecheh_Logs::addLog( 'interpunction', 'Interpunction test failed', [ 'error' => $exception->getMessage() ] );
 		wp_send_json_error(

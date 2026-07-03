@@ -18,10 +18,12 @@ Interpunction Check is a separate, opt-in feature (Settings > Interpunction Chec
 Settings:
 - **Enable Interpunction Check** — shows the "Interpunction Check" page in the admin menu.
 - **Type** — how the request is made: `Commandline - Local model`, `OpenAI`, `Claude`, or `Gemini`.
-- **Commandline Command** — shown only for the Commandline type (see contract below).
+- **Commandline Command** — shown only for the Commandline type (see contract below); defaults to the bundled `tools/llm-wrapper.php`, which calls the `claude` CLI unless the Local Model dropdown below selects an Ollama model.
+- **Local Model (via wrapper)** — shown only for the Commandline type; picks an Ollama model (Qwen 2.5 3B/7B/14B/32B) to append to the Commandline Command as `--provider ollama --model <selection>`. Left on its default, the command runs as typed (`claude`). See [`tools/README.md`](tools/README.md) for setup.
 - **Endpoint** — optional override of the default API URL; shown only for OpenAI/Claude/Gemini.
 - **Access Key** — API token for OpenAI/Claude/Gemini; not needed (or stored) for Commandline.
 - **Prompt** — instruction sent to the LLM; defaults to `You are a professional {language} editor. Your only task is to fix the punctuation and capitalization of the provided text. Keep the original text content exactly as is. Output only the corrected text.` — `{language}` is replaced with the post's language.
+- **Background Interpunction Check** — Enable, Schedule Interval (default every 10 minutes), and Batch Size (default 1 post per run) for an automatic WP-Cron check of outdated posts, mirroring Background Spell Check.
 
 ### Commandline contract
 For the Commandline type, Splecheh runs the configured shell command with a single, shell-escaped argument: a JSON object `{"language": "...", "prompt": "...", "sentences": ["...", ...]}`. This keeps API keys out of WordPress — the script owns its own credentials (e.g. to call a locally-hosted model).
@@ -36,7 +38,7 @@ The script must print a JSON array to stdout, one item per input sentence and in
 
 The process is run with a timeout (60 seconds by default, filterable via `splecheh_interpunction_command_timeout`); a command that hangs or exceeds the timeout fails with a clear error instead of hanging the request.
 
-A non-zero exit code is treated as a failure, with stderr shown as the error message. See [`bin/interpunction-check.sh`](bin/interpunction-check.sh) for a working (dummy, pass-through) reference implementation of this contract.
+A non-zero exit code is treated as a failure, with stderr shown as the error message. See [`bin/interpunction-check.sh`](bin/interpunction-check.sh) for a working (dummy, pass-through) reference implementation of this contract, or [`tools/llm-wrapper.php`](tools/llm-wrapper.php) for a real one that calls the `claude` CLI or a local Ollama model — see [`tools/README.md`](tools/README.md) for setup, including `tools/local-model.sh` to start/stop a local Ollama server.
 
 OpenAI/Claude/Gemini are called directly via `wp_remote_post` (no composer SDK) using each provider's default chat/completion endpoint.
 
@@ -69,6 +71,17 @@ Built with the assistance of [CodeRabbit](https://coderabbit.ai) for code review
 Run `composer install` to pull in dev dependencies (PHPUnit), then `composer test` to run the test suite. The committed `vendor/` folder is production-only (no dev dependencies), so the plugin works as-is without running Composer.
 
 ## Change log
+
+### --- 0.20.0 ---
+- `tools/llm-wrapper.php` now supports `--provider claude|ollama` and `--model <name>` flags (defaulting to `claude`, unchanged from before), so the Commandline Interpunction Check can call a local Ollama model instead of the `claude` CLI.
+- Added `tools/local-model.sh` to start/stop a local Ollama server outside of systemd, with PID tracking (`tools/.run/ollama.pid`) and a `warm` command to pre-load a model into memory so the first real check isn't slowed by a cold load. It reuses (and won't kill) an already-running Ollama instance, e.g. one managed by systemd.
+- Added `tools/README.md` documenting both the `claude` CLI and local-Ollama setup paths, including the env vars (`SPLECHEH_OLLAMA_HOST`, `SPLECHEH_OLLAMA_MODEL`, `SPLECHEH_OLLAMA_KEEP_ALIVE`, `SPLECHEH_OLLAMA_TIMEOUT`), the need to raise `splecheh_interpunction_command_timeout` for local models, and measured generation speed per model size (CPU-only, no GPU offload) to help pick a model that's actually fast enough for this feature — `qwen2.5:7b` is the default.
+- Added `tools/benchmark.sh` to compare `claude` vs one or more local Ollama models side by side (timing + output) against the same canned sentences used by the Settings page "Test" button; warms each Ollama model before timing it so results reflect generation speed, not model-load time.
+- `llm-wrapper.php`'s `claude` timeout is now overridable via `SPLECHEH_CLAUDE_TIMEOUT` (was a hardcoded 55s) — needed for real posts with many sentences, which can easily exceed it; see the new "Timeouts for real posts, not just test batches" section in `tools/README.md`.
+- The Settings page "Test Interpunction Check" button now has a "Command override (this test run only, not saved)" field (Commandline type only), so you can try a different provider/model (e.g. a local Ollama model vs `claude`) without changing the saved Commandline Command.
+- Each saved Interpunction Check report now records which provider/model produced it (`provider`/`model` fields), shown on the Details page as "Checked with: …". `Splecheh_InterpunctionBackend::get_model_label()` resolves this from the saved settings (the API model filter for OpenAI/Claude/Gemini, or a `--model` flag parsed out of the Commandline Command).
+- Settings > Interpunction Check now defaults the Commandline Command to the bundled `tools/llm-wrapper.php`, and adds a "Local Model (via wrapper)" dropdown (Qwen 2.5 3B/7B/14B/32B) that appends `--provider ollama --model <selection>` to the command automatically; left on its default option, the command runs as typed (`claude` via the wrapper).
+- Added Background Interpunction Check: a new Settings section (Enable, Schedule Interval — default every 10 minutes, Batch Size — default 1 post per run, since each post is a full LLM request) and matching WP-Cron integration (`Splecheh_InterpunctionCron`), mirroring Background Spell Check but checking only posts outdated per `_splecheh_interpunction_checked_at`. The Interpunction Check page now shows the same status bar (last run, issues, pending, Run Now) as the Spell Check page.
 
 ### --- 0.19.1 ---
 - Fixed the Commandline Interpunction Check (and its Settings page "Test" button) hanging indefinitely — and returning an empty response with nothing in the Logs — for commands that block on stdin or fill a pipe buffer. `check_commandline()` now runs the command via Symfony `Process` with an explicit timeout (60s by default, filterable via `splecheh_interpunction_command_timeout`), and both the commandline call and the Test button now write start/failure entries to Logs.

@@ -1,2 +1,4 @@
 composer.lock
 .phpunit.result.cache
+tools/.run/
+logs/

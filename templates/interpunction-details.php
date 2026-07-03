@@ -31,6 +31,18 @@ $issues = $report['issues'] ?? [];
 		<p><?php esc_html_e( 'No interpunction check report found for this post yet.', 'splecheh' ); ?></p>
 	<?php else : ?>
 
+		<?php if ( ! empty( $report['model'] ) ) : ?>
+		<p>
+			<?php
+			printf(
+				/* translators: %s: model/command label, e.g. "claude-3-5-haiku-latest" or "qwen2.5:7b" */
+				esc_html__( 'Checked with: %s', 'splecheh' ),
+				'<code>' . esc_html( $report['model'] ) . '</code>'
+			);
+			?>
+		</p>
+		<?php endif; ?>
+
 		<div id="splecheh-interpunction-details-message" style="display:none;" class="notice is-dismissible"><p></p></div>
 
 		<p>
