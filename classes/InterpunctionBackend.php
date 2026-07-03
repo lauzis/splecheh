@@ -28,10 +28,38 @@ class Splecheh_InterpunctionBackend {
 	];
 
 	/**
-	 * Builds the example payload used by the Settings page "Test Interpunction Check"
-	 * button: the currently configured language and prompt, plus canned test sentences.
+	 * Cap on how many of a chosen post's sentences are sent to the "Test Interpunction
+	 * Check" button, so picking a long post doesn't turn the test into a slow/expensive
+	 * full check.
 	 */
-	public static function build_test_payload(): array {
+	const TEST_MAX_SENTENCES = 5;
+
+	/**
+	 * Builds the example payload used by the Settings page "Test Interpunction Check"
+	 * button: the currently configured language and prompt, plus either the canned test
+	 * sentences or, when $post_id is given and has content, that post's own first few
+	 * sentences (same language detection and text preparation as a real check).
+	 */
+	public static function build_test_payload( int $post_id = 0 ): array {
+		if ( $post_id > 0 ) {
+			$post = get_post( $post_id );
+			if ( $post ) {
+				$language   = splecheh_get_language_code( $post_id );
+				$plain_text = Splecheh_SpellCheckReport::prepare_text( $post->post_content, splecheh_ignore_shortcodes_enabled() );
+				$sentences  = array_slice( Splecheh_InterpunctionReport::split_into_sentences( $plain_text ), 0, self::TEST_MAX_SENTENCES );
+
+				if ( ! empty( $sentences ) ) {
+					return [
+						'language'   => $language,
+						'prompt'     => str_replace( '{language}', $language, self::get_prompt() ),
+						'sentences'  => $sentences,
+						'post_id'    => $post_id,
+						'post_title' => $post->post_title,
+					];
+				}
+			}
+		}
+
 		$language = Splecheh_SpellCheckReport::get_language();
 
 		return [

@@ -1,5 +1,5 @@
-/* global splechehInterpunctionTest */
-(function () {
+/* global jQuery, splechehInterpunctionTest */
+(function ($) {
 	'use strict';
 
 	document.addEventListener('DOMContentLoaded', function () {
@@ -10,6 +10,41 @@
 		var msg = document.getElementById('splecheh-interpunction-test-message');
 		var requestEl = document.getElementById('splecheh-interpunction-test-request');
 		var resultEl = document.getElementById('splecheh-interpunction-test-result');
+		var postInput = document.getElementById('splecheh-interpunction-test-post');
+		var postIdInput = document.getElementById('splecheh-interpunction-test-post-id');
+
+		if (postInput && $.fn.autocomplete) {
+			// Clearing the field by hand (not via selecting a suggestion) drops the
+			// post id, reverting the test to the built-in example sentences.
+			postInput.addEventListener('input', function () {
+				if (postInput.value === '') postIdInput.value = '';
+			});
+
+			$(postInput).autocomplete({
+				minLength: 2,
+				delay: 300,
+				source: function (request, response) {
+					var params = new URLSearchParams({
+						action: 'splecheh_interpunction_test_search_posts',
+						nonce: splechehInterpunctionTest.nonce,
+						s: request.term
+					});
+					fetch(splechehInterpunctionTest.ajaxUrl + '?' + params.toString())
+						.then(function (r) { return r.json(); })
+						.then(function (data) {
+							response(data.success ? data.data : []);
+						})
+						.catch(function () {
+							response([]);
+						});
+				},
+				select: function (event, ui) {
+					postIdInput.value = ui.item.id;
+					postInput.value = ui.item.label;
+					return false;
+				}
+			});
+		}
 
 		button.addEventListener('click', function () {
 			button.disabled = true;
@@ -19,6 +54,9 @@
 			var formData = new FormData();
 			formData.append('action', 'splecheh_interpunction_test');
 			formData.append('nonce', splechehInterpunctionTest.nonce);
+			if (postIdInput && postIdInput.value) {
+				formData.append('post_id', postIdInput.value);
+			}
 
 			fetch(splechehInterpunctionTest.ajaxUrl, { method: 'POST', body: formData })
 				.then(function (r) { return r.json(); })
@@ -60,4 +98,4 @@
 				});
 		});
 	});
-}());
+}(jQuery));

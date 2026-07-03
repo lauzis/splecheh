@@ -101,6 +101,7 @@ add_action( 'wp_ajax_splecheh_interpunction_fix', 'splecheh_ajax_interpunction_f
 add_action( 'wp_ajax_splecheh_interpunction_ignore_in_post', 'splecheh_ajax_interpunction_ignore_in_post' );
 add_action( 'wp_ajax_splecheh_interpunction_ignore_always', 'splecheh_ajax_interpunction_ignore_always' );
 add_action( 'wp_ajax_splecheh_interpunction_test', 'splecheh_ajax_interpunction_test' );
+add_action( 'wp_ajax_splecheh_interpunction_test_search_posts', 'splecheh_ajax_interpunction_test_search_posts' );
 add_action( 'carbon_fields_theme_options_container_saved', 'splecheh_sync_bg_cron' );
 
 function splecheh_sync_bg_cron(): void {
@@ -332,6 +333,18 @@ function splecheh_register_settings_fields(): void {
 function splecheh_render_interpunction_test_field(): string {
 	ob_start();
 	?>
+	<p>
+		<label for="splecheh-interpunction-test-post"><?php esc_html_e( 'Test against a post/page (optional)', 'splecheh' ); ?></label><br>
+		<input
+			type="text"
+			id="splecheh-interpunction-test-post"
+			class="regular-text"
+			autocomplete="off"
+			placeholder="<?php esc_attr_e( 'Search by title… leave empty to use the built-in example sentences', 'splecheh' ); ?>"
+		>
+		<input type="hidden" id="splecheh-interpunction-test-post-id" value="">
+	</p>
+
 	<button type="button" id="splecheh-interpunction-test-button" class="button">
 		<?php esc_html_e( 'Test Interpunction Check', 'splecheh' ); ?>
 	</button>
@@ -589,10 +602,12 @@ function splecheh_enqueue_settings_assets(): void {
 		return;
 	}
 
+	wp_enqueue_style( 'wp-jquery-ui-dialog' );
+
 	wp_enqueue_script(
 		'splecheh-interpunction-test',
 		plugins_url( 'assets/js/interpunction-test.js', SPLECHEH_PLUGIN_FILE ),
-		[],
+		[ 'jquery-ui-autocomplete' ],
 		SPLECHEH_VERSION,
 		true
 	);
@@ -1118,7 +1133,8 @@ function splecheh_ajax_interpunction_test(): void {
 		wp_send_json_error( [ 'message' => __( 'Insufficient permissions.', 'splecheh' ) ], 403 );
 	}
 
-	$payload = Splecheh_InterpunctionBackend::build_test_payload();
+	$post_id = isset( $_POST['post_id'] ) ? absint( $_POST['post_id'] ) : 0;
+	$payload = Splecheh_InterpunctionBackend::build_test_payload( $post_id );
 
 	Splecheh_Logs::addLog( 'interpunction', 'Interpunction test started', [] );
 
@@ -1152,6 +1168,49 @@ function splecheh_ajax_interpunction_test(): void {
 			'result'  => $result,
 		]
 	);
+}
+
+/**
+ * Powers the autocomplete field on the "Test Interpunction Check" button: searches
+ * titles across the post types enabled for checking, for the user to pick a real
+ * post/page to test against instead of the canned example sentences.
+ */
+function splecheh_ajax_interpunction_test_search_posts(): void {
+	check_ajax_referer( 'splecheh_interpunction_test', 'nonce' );
+
+	if ( ! current_user_can( 'manage_options' ) ) {
+		wp_send_json_error( [ 'message' => __( 'Insufficient permissions.', 'splecheh' ) ], 403 );
+	}
+
+	$search = isset( $_GET['s'] ) ? sanitize_text_field( wp_unslash( $_GET['s'] ) ) : '';
+	if ( $search === '' ) {
+		wp_send_json_success( [] );
+	}
+
+	$query = new WP_Query(
+		[
+			's'                      => $search,
+			'post_type'              => splecheh_get_enabled_post_types(),
+			'post_status'            => 'publish',
+			'posts_per_page'         => 20,
+			'orderby'                => 'relevance',
+			'no_found_rows'          => true,
+			'update_post_meta_cache' => false,
+			'update_post_term_cache' => false,
+		]
+	);
+
+	$results = array_map(
+		static function ( WP_Post $post ): array {
+			return [
+				'id'    => $post->ID,
+				'label' => $post->post_title !== '' ? $post->post_title : '(no title)',
+			];
+		},
+		$query->posts
+	);
+
+	wp_send_json_success( $results );
 }
 
 function splecheh_ajax_interpunction_details_rerun(): void {
