@@ -12,6 +12,7 @@
 		var resultEl = document.getElementById('splecheh-interpunction-test-result');
 		var postInput = document.getElementById('splecheh-interpunction-test-post');
 		var postIdInput = document.getElementById('splecheh-interpunction-test-post-id');
+		var allSentencesInput = document.getElementById('splecheh-interpunction-test-all-sentences');
 
 		if (postInput && $.fn.autocomplete) {
 			// Clearing the field by hand (not via selecting a suggestion) drops the
@@ -56,6 +57,9 @@
 			formData.append('nonce', splechehInterpunctionTest.nonce);
 			if (postIdInput && postIdInput.value) {
 				formData.append('post_id', postIdInput.value);
+			}
+			if (allSentencesInput && allSentencesInput.checked) {
+				formData.append('test_all_sentences', '1');
 			}
 
 			fetch(splechehInterpunctionTest.ajaxUrl, { method: 'POST', body: formData })

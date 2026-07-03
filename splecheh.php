@@ -320,23 +320,6 @@ function splecheh_register_settings_fields(): void {
 					->set_default_value( Splecheh_InterpunctionReport::DEFAULT_PROMPT )
 					->set_help_text( __( 'Instruction sent to the LLM. Use {language} as a placeholder for the post\'s language. Must tell the LLM to output only a JSON array of {original, fixed, explanation} objects, one per input sentence and in the same order — see the default value for the expected wording.', 'splecheh' ) ),
 
-				\Carbon_Fields\Field::make( 'checkbox', 'splecheh_interpunction_test_all_sentences', __( 'Test All Sentences', 'splecheh' ) )
-					->set_help_text( __( 'When enabled, the Test button sends every sentence of the selected post instead of just the first few. Has no effect on the canned example (always 3 sentences).', 'splecheh' ) ),
-
-				\Carbon_Fields\Field::make( 'text', 'splecheh_interpunction_test_sentence_limit', __( 'Test Sentence Limit', 'splecheh' ) )
-					->set_default_value( (string) Splecheh_InterpunctionBackend::DEFAULT_TEST_MAX_SENTENCES )
-					->set_attribute( 'type', 'number' )
-					->set_attribute( 'min', '1' )
-					->set_help_text( __( 'How many of the selected post\'s sentences the Test button sends to the LLM. Ignored when "Test All Sentences" is enabled.', 'splecheh' ) )
-					->set_conditional_logic(
-						[
-							[
-								'field' => 'splecheh_interpunction_test_all_sentences',
-								'value' => false,
-							],
-						]
-					),
-
 				\Carbon_Fields\Field::make( 'html', 'splecheh_interpunction_test' )
 					->set_html( 'splecheh_render_interpunction_test_field' ),
 			]
@@ -360,6 +343,13 @@ function splecheh_render_interpunction_test_field(): string {
 			placeholder="<?php esc_attr_e( 'Search by title… leave empty to use the built-in example sentences', 'splecheh' ); ?>"
 		>
 		<input type="hidden" id="splecheh-interpunction-test-post-id" value="">
+	</p>
+
+	<p>
+		<label>
+			<input type="checkbox" id="splecheh-interpunction-test-all-sentences">
+			<?php esc_html_e( 'Test all sentences (default: first 5) — this run only, not saved', 'splecheh' ); ?>
+		</label>
 	</p>
 
 	<button type="button" id="splecheh-interpunction-test-button" class="button">
@@ -1150,8 +1140,9 @@ function splecheh_ajax_interpunction_test(): void {
 		wp_send_json_error( [ 'message' => __( 'Insufficient permissions.', 'splecheh' ) ], 403 );
 	}
 
-	$post_id = isset( $_POST['post_id'] ) ? absint( $_POST['post_id'] ) : 0;
-	$payload = Splecheh_InterpunctionBackend::build_test_payload( $post_id );
+	$post_id        = isset( $_POST['post_id'] ) ? absint( $_POST['post_id'] ) : 0;
+	$sentence_limit = ! empty( $_POST['test_all_sentences'] ) ? 0 : null;
+	$payload        = Splecheh_InterpunctionBackend::build_test_payload( $post_id, $sentence_limit );
 
 	Splecheh_Logs::addLog( 'interpunction', 'Interpunction test started', [] );
 

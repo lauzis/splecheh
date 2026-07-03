@@ -30,38 +30,23 @@ class Splecheh_InterpunctionBackend {
 	/**
 	 * Default cap on how many of a chosen post's sentences are sent to the "Test
 	 * Interpunction Check" button, so picking a long post doesn't turn the test into
-	 * a slow/expensive full check. Overridable via the Settings page (or "Test All
-	 * Sentences" to remove the cap entirely); see get_test_sentence_limit().
+	 * a slow/expensive full check. Overridable per-request via build_test_payload()'s
+	 * $sentence_limit argument (e.g. the Settings page's own "Test all sentences"
+	 * checkbox) — this is never saved, it only affects that one test run.
 	 */
 	const DEFAULT_TEST_MAX_SENTENCES = 5;
-
-	/**
-	 * How many of a chosen post's sentences the Test button should send, per the
-	 * Settings page "Test Sentence Limit" / "Test All Sentences" fields.
-	 *
-	 * @return int Sentence cap, or 0 for no limit (send all).
-	 */
-	public static function get_test_sentence_limit(): int {
-		if ( ! function_exists( 'carbon_get_theme_option' ) ) {
-			return self::DEFAULT_TEST_MAX_SENTENCES;
-		}
-
-		if ( carbon_get_theme_option( 'splecheh_interpunction_test_all_sentences' ) ) {
-			return 0;
-		}
-
-		$limit = (int) carbon_get_theme_option( 'splecheh_interpunction_test_sentence_limit' );
-		return $limit > 0 ? $limit : self::DEFAULT_TEST_MAX_SENTENCES;
-	}
 
 	/**
 	 * Builds the example payload used by the Settings page "Test Interpunction Check"
 	 * button: the currently configured language and prompt, plus either the canned test
 	 * sentences or, when $post_id is given and has content, that post's own sentences
-	 * (same language detection and text preparation as a real check), capped per
-	 * get_test_sentence_limit().
+	 * (same language detection and text preparation as a real check).
+	 *
+	 * @param int      $post_id        Post to test against, or 0 for the canned example.
+	 * @param int|null $sentence_limit Max sentences to send from the post; null uses
+	 *                                 DEFAULT_TEST_MAX_SENTENCES, 0 means no limit.
 	 */
-	public static function build_test_payload( int $post_id = 0 ): array {
+	public static function build_test_payload( int $post_id = 0, ?int $sentence_limit = null ): array {
 		if ( $post_id > 0 ) {
 			$post = get_post( $post_id );
 			if ( $post ) {
@@ -69,7 +54,7 @@ class Splecheh_InterpunctionBackend {
 				$plain_text = Splecheh_SpellCheckReport::prepare_text( $post->post_content, splecheh_ignore_shortcodes_enabled() );
 				$sentences  = Splecheh_InterpunctionReport::split_into_sentences( $plain_text );
 
-				$limit = self::get_test_sentence_limit();
+				$limit = $sentence_limit ?? self::DEFAULT_TEST_MAX_SENTENCES;
 				if ( $limit > 0 ) {
 					$sentences = array_slice( $sentences, 0, $limit );
 				}
