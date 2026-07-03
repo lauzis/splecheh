@@ -1165,7 +1165,7 @@ function splecheh_ajax_interpunction_test(): void {
 	wp_send_json_success(
 		[
 			'payload' => $payload,
-			'result'  => $result,
+			'result'  => Splecheh_InterpunctionReport::build_issues( $result ),
 		]
 	);
 }

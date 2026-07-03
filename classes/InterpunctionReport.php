@@ -72,9 +72,11 @@ class Splecheh_InterpunctionReport {
 
 	/**
 	 * Keeps only the backend's per-sentence results whose fixed text differs from
-	 * the original, since an unchanged sentence isn't an issue to review.
+	 * the original, since an unchanged sentence isn't an issue to review. Also used
+	 * by the Settings page "Test Interpunction Check" button, so it only surfaces
+	 * sentences the LLM actually changed.
 	 */
-	private static function build_issues( array $results ): array {
+	public static function build_issues( array $results ): array {
 		$issues = [];
 		foreach ( $results as $result ) {
 			$original = trim( (string) ( $result['original'] ?? '' ) );
