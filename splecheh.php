@@ -320,6 +320,23 @@ function splecheh_register_settings_fields(): void {
 					->set_default_value( Splecheh_InterpunctionReport::DEFAULT_PROMPT )
 					->set_help_text( __( 'Instruction sent to the LLM. Use {language} as a placeholder for the post\'s language. Must tell the LLM to output only a JSON array of {original, fixed, explanation} objects, one per input sentence and in the same order — see the default value for the expected wording.', 'splecheh' ) ),
 
+				\Carbon_Fields\Field::make( 'checkbox', 'splecheh_interpunction_test_all_sentences', __( 'Test All Sentences', 'splecheh' ) )
+					->set_help_text( __( 'When enabled, the Test button sends every sentence of the selected post instead of just the first few. Has no effect on the canned example (always 3 sentences).', 'splecheh' ) ),
+
+				\Carbon_Fields\Field::make( 'text', 'splecheh_interpunction_test_sentence_limit', __( 'Test Sentence Limit', 'splecheh' ) )
+					->set_default_value( (string) Splecheh_InterpunctionBackend::DEFAULT_TEST_MAX_SENTENCES )
+					->set_attribute( 'type', 'number' )
+					->set_attribute( 'min', '1' )
+					->set_help_text( __( 'How many of the selected post\'s sentences the Test button sends to the LLM. Ignored when "Test All Sentences" is enabled.', 'splecheh' ) )
+					->set_conditional_logic(
+						[
+							[
+								'field' => 'splecheh_interpunction_test_all_sentences',
+								'value' => false,
+							],
+						]
+					),
+
 				\Carbon_Fields\Field::make( 'html', 'splecheh_interpunction_test' )
 					->set_html( 'splecheh_render_interpunction_test_field' ),
 			]
