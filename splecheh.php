@@ -585,7 +585,7 @@ function splecheh_enqueue_interpunction_assets( string $hook ): void {
 
 function splecheh_enqueue_settings_assets(): void {
 	$page = isset( $_GET['page'] ) ? (string) wp_unslash( $_GET['page'] ) : '';
-	if ( $page !== 'crb_settings.php' ) {
+	if ( $page !== 'crb_carbon_fields_container_settings.php' ) {
 		return;
 	}
 
