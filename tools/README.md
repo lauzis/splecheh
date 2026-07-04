@@ -108,6 +108,14 @@ actually generate at a reasonable rate — benchmark on your own hardware
 before committing to a model, since GPU VRAM and core count both matter a
 lot here.
 
+**These Qwen models are more proof-of-concept than production-ready.**
+Benchmarking so far has focused on speed, using short English example
+sentences — output quality on real content in smaller/less-common languages
+hasn't been specifically verified and could be worse than `claude` or a
+hosted API. Test against your own posts (Settings > Interpunction Check >
+Test button, or `tools/benchmark.sh`) before relying on a local model for a
+non-English site.
+
 The official installer registers Ollama as a systemd service that
 auto-starts on boot. If you'd rather control start/stop yourself (e.g. to
 free RAM when Interpunction Check isn't running), disable that and use

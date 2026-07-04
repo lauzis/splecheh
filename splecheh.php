@@ -315,7 +315,7 @@ function splecheh_register_settings_fields(): void {
 						]
 					)
 					->set_default_value( '' )
-					->set_help_text( __( 'Only applies when the Commandline Command above calls tools/llm-wrapper.php: appends "--provider ollama --model <selection>" to it automatically. Requires the model pulled (ollama pull) and tools/local-model.sh start running — see tools/README.md. Leave on the first option to use the command as typed (e.g. the claude CLI).', 'splecheh' ) )
+					->set_help_text( __( 'Only applies when the Commandline Command above calls tools/llm-wrapper.php: appends "--provider ollama --model <selection>" to it automatically. Requires the model pulled (ollama pull) and tools/local-model.sh start running — see tools/README.md. Leave on the first option to use the command as typed (e.g. the claude CLI). Note: these Qwen models are more proof-of-concept than production-ready — testing so far has focused on speed using English example sentences; quality on real content in smaller/less-common languages hasn\'t been specifically verified and could be worse than with claude or a hosted API.', 'splecheh' ) )
 					->set_conditional_logic(
 						[
 							[

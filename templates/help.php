@@ -90,6 +90,10 @@ ollama pull qwen2.5:7b</pre>
 		<?php esc_html_e( 'Pick a model size that\'s actually fast enough for your hardware, not just one that fits in RAM — without a GPU with enough VRAM, larger models can be far too slow to be practical for this feature. See tools/README.md in the plugin folder for measured speeds per model size, the full env var reference, and tools/benchmark.sh to compare providers/models on your own server.', 'splecheh' ); ?>
 	</p>
 
+	<p>
+		<?php esc_html_e( 'Note: the Qwen models offered in the "Local Model" dropdown are more proof-of-concept than production-ready. Testing so far has focused on speed, using short English example sentences — quality on real content in smaller/less-common languages hasn\'t been specifically verified and could be worse than with claude or a hosted API. Test against your own posts (Settings > Interpunction Check > Test button) before relying on a local model for a non-English site.', 'splecheh' ); ?>
+	</p>
+
 	<h2 id="setting-up-a-real-cron-job"><?php esc_html_e( 'Setting Up a Real Cron Job', 'splecheh' ); ?></h2>
 
 	<p>
