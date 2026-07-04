@@ -271,14 +271,6 @@ function splecheh_register_settings_fields(): void {
 			]
 		)
 		->add_tab(
-			__( 'Logs', 'splecheh' ),
-			[
-				\Carbon_Fields\Field::make( 'checkbox', 'splecheh_logs_enabled', __( 'Enable Logs', 'splecheh' ) )
-					->set_default_value( true )
-					->set_help_text( __( 'When disabled, no new log entries are written and the Logs page is hidden from the menu.', 'splecheh' ) ),
-			]
-		)
-		->add_tab(
 			__( 'Interpunction Check', 'splecheh' ),
 			[
 				\Carbon_Fields\Field::make( 'checkbox', 'splecheh_interpunction_enabled', __( 'Enable Interpunction Check', 'splecheh' ) )
@@ -397,6 +389,14 @@ function splecheh_register_settings_fields(): void {
 				\Carbon_Fields\Field::make( 'text', 'splecheh_interpunction_bg_batch_size', __( 'Batch Size', 'splecheh' ) )
 					->set_default_value( '1' )
 					->set_help_text( __( 'Number of posts to check per background run. Default: 1 — each post is a full LLM request, so this is deliberately smaller than the Spell Check batch size, especially for local/slower models.', 'splecheh' ) ),
+			]
+		)
+		->add_tab(
+			__( 'Logs', 'splecheh' ),
+			[
+				\Carbon_Fields\Field::make( 'checkbox', 'splecheh_logs_enabled', __( 'Enable Logs', 'splecheh' ) )
+					->set_default_value( true )
+					->set_help_text( __( 'When disabled, no new log entries are written and the Logs page is hidden from the menu.', 'splecheh' ) ),
 			]
 		);
 }
