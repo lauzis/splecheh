@@ -4,7 +4,9 @@
 
 	document.addEventListener('DOMContentLoaded', function () {
 
-		// Updates a row's Last Checked/Status/Report/Actions cells after a successful run.
+		// Updates a row's Last Checked/Status/Chunks/Report/Actions cells after a run —
+		// including a partial (chunk failed partway through) save, not just a full
+		// success, since InterpunctionReport::run() may still have saved a report.
 		// Shared by the per-row button and the bulk "Re-run Interpunction Check" action.
 		function applyRunResult(row, result) {
 			var checkedCell = row.querySelector('[data-colname="Last Checked"]') || row.cells[3];
@@ -16,13 +18,27 @@
 					splechehInterpunctionCheck.i18n.upToDate + '</span>';
 			}
 
-			var reportCell = row.querySelector('[data-colname="Report"]') || row.cells[5];
+			var chunksCell = row.querySelector('[data-colname="Chunks"]') || row.cells[5];
+			if (chunksCell) {
+				var total = result.chunks_total;
+				if (total === null || total === undefined || total <= 0) {
+					chunksCell.innerHTML = '&mdash;';
+				} else {
+					var label = result.chunks_processed + '/' + total;
+					chunksCell.innerHTML = result.chunks_processed < total
+						? '<span class="splecheh-badge splecheh-badge--outdated" title="' +
+							splechehInterpunctionCheck.i18n.incompleteChunks + '">' + label + '</span>'
+						: label;
+				}
+			}
+
+			var reportCell = row.querySelector('[data-colname="Report"]') || row.cells[6];
 			if (reportCell && result.report_url) {
 				reportCell.innerHTML = '<a href="' + result.report_url +
 					'" target="_blank" rel="noopener">' + splechehInterpunctionCheck.i18n.viewReport + '</a>';
 			}
 
-			var actionsCell = row.querySelector('[data-colname="Actions"]') || row.cells[7];
+			var actionsCell = row.querySelector('[data-colname="Actions"]') || row.cells[8];
 			if (actionsCell && result.actions_html) {
 				actionsCell.innerHTML = result.actions_html;
 			}
@@ -54,9 +70,15 @@
 					var msg = document.getElementById('splecheh-interpunction-check-message');
 
 					if (!data.success) {
+						var errData = data.data || {};
+
+						// A chunk can fail partway through and still leave a partial report
+						// saved (see InterpunctionReport::run()) — reflect that in the row
+						// instead of leaving it showing stale pre-run data.
+						if (errData.row) applyRunResult(row, errData.row);
+
 						if (msg) {
 							msg.className = 'notice notice-error is-dismissible';
-							var errData = data.data || {};
 							var p = msg.querySelector('p');
 							p.textContent = (typeof errData === 'string' ? errData : errData.message) || 'Interpunction check failed.';
 							msg.style.display = 'block';
@@ -195,7 +217,13 @@
 						var results = data.data.results;
 						Object.keys(results).forEach(function (postId) {
 							var row = rowsById[postId];
-							if (row && results[postId].success) applyRunResult(row, results[postId]);
+							// A chunk failing partway through can still leave a partial report
+							// saved, so update the row whenever row data came back — not only
+							// on full success — using checked_at_formatted's presence as the
+							// signal that a report (full or partial) exists to reflect.
+							if (row && results[postId].checked_at_formatted !== undefined) {
+								applyRunResult(row, results[postId]);
+							}
 						});
 
 						if (msg) {

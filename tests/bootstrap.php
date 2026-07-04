@@ -70,6 +70,13 @@ if ( ! class_exists( 'WP_Error' ) ) {
 			}
 			return $this->error_data[ $code ] ?? null;
 		}
+
+		public function add_data( $data, string $code = '' ): void {
+			if ( $code === '' ) {
+				$code = array_key_first( $this->errors ) ?? '';
+			}
+			$this->error_data[ $code ] = $data;
+		}
 	}
 }
 
@@ -82,6 +89,13 @@ if ( ! function_exists( 'get_post_meta' ) ) {
 if ( ! function_exists( 'update_post_meta' ) ) {
 	function update_post_meta( int $post_id, string $key, $value ): bool {
 		$GLOBALS['__splecheh_test_post_meta'][ $post_id ][ $key ] = $value;
+		return true;
+	}
+}
+
+if ( ! function_exists( 'delete_post_meta' ) ) {
+	function delete_post_meta( int $post_id, string $key ): bool {
+		unset( $GLOBALS['__splecheh_test_post_meta'][ $post_id ][ $key ] );
 		return true;
 	}
 }

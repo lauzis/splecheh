@@ -84,5 +84,33 @@ final class InterpunctionChunkingTest extends TestCase {
 		$result = \Splecheh_InterpunctionBackend::check( [ 'good', 'bad', 'good2' ], 'en', $command );
 
 		$this->assertInstanceOf( \WP_Error::class, $result );
+
+		// Chunk 0 ("good") succeeded before chunk 1 ("bad") failed — that partial
+		// progress is attached to the error so InterpunctionReport::run() can save it
+		// instead of discarding it.
+		$data = $result->get_error_data();
+		$this->assertSame( 1, $data['chunks_processed'] );
+		$this->assertSame( 3, $data['chunks_total'] );
+		$this->assertSame( [ 'good' ], array_column( $data['results'], 'original' ) );
+	}
+
+	public function test_count_chunks(): void {
+		add_filter( 'splecheh_interpunction_chunk_size', function () {
+			return 5;
+		} );
+
+		$this->assertSame( 0, \Splecheh_InterpunctionBackend::count_chunks( 0 ) );
+		$this->assertSame( 1, \Splecheh_InterpunctionBackend::count_chunks( 5 ) );
+		$this->assertSame( 2, \Splecheh_InterpunctionBackend::count_chunks( 6 ) );
+		$this->assertSame( 3, \Splecheh_InterpunctionBackend::count_chunks( 11 ) );
+	}
+
+	public function test_count_chunks_with_chunking_disabled_is_always_one(): void {
+		add_filter( 'splecheh_interpunction_chunk_size', function () {
+			return 0;
+		} );
+
+		$this->assertSame( 1, \Splecheh_InterpunctionBackend::count_chunks( 52 ) );
+		$this->assertSame( 0, \Splecheh_InterpunctionBackend::count_chunks( 0 ) );
 	}
 }

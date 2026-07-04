@@ -106,22 +106,51 @@ class Splecheh_InterpunctionBackend {
 	 * @return array|WP_Error
 	 */
 	public static function check( array $sentences, string $language, ?string $command_override = null ) {
-		$chunk_size = (int) apply_filters( 'splecheh_interpunction_chunk_size', self::get_chunk_size() );
+		$chunk_size = self::resolve_chunk_size();
 
 		if ( $chunk_size <= 0 || count( $sentences ) <= $chunk_size ) {
 			return self::check_batch( $sentences, $language, $command_override );
 		}
 
+		$chunks  = array_chunk( $sentences, $chunk_size );
 		$results = [];
-		foreach ( array_chunk( $sentences, $chunk_size ) as $chunk ) {
+
+		foreach ( $chunks as $index => $chunk ) {
 			$chunk_result = self::check_batch( $chunk, $language, $command_override );
 			if ( is_wp_error( $chunk_result ) ) {
+				// Lets the caller (InterpunctionReport::run()) save whatever chunks
+				// already succeeded instead of discarding them, and show how far the
+				// check got (e.g. "6/11 chunks") rather than a plain failure.
+				$chunk_result->add_data(
+					[
+						'results'          => $results,
+						'chunks_processed' => $index,
+						'chunks_total'     => count( $chunks ),
+					]
+				);
 				return $chunk_result;
 			}
 			array_push( $results, ...$chunk_result );
 		}
 
 		return $results;
+	}
+
+	/**
+	 * How many chunks a post with $sentence_count sentences would be split into,
+	 * using the currently configured chunk size. 0 sentences need 0 chunks;
+	 * chunking disabled (chunk size <= 0) always means a single chunk.
+	 */
+	public static function count_chunks( int $sentence_count ): int {
+		if ( $sentence_count <= 0 ) {
+			return 0;
+		}
+		$chunk_size = self::resolve_chunk_size();
+		return $chunk_size <= 0 ? 1 : (int) ceil( $sentence_count / $chunk_size );
+	}
+
+	private static function resolve_chunk_size(): int {
+		return (int) apply_filters( 'splecheh_interpunction_chunk_size', self::get_chunk_size() );
 	}
 
 	/**

@@ -10,6 +10,10 @@ class Splecheh_InterpunctionReport {
 
 	/**
 	 * Runs the interpunction check on a post, saves the JSON report, and updates post meta.
+	 * If a chunk fails partway through (see Splecheh_InterpunctionBackend::check()), the
+	 * chunks that already succeeded are still saved as a partial report — rather than
+	 * discarding that work — with chunks_processed < chunks_total, and the failure is
+	 * still returned so the caller knows the check didn't fully complete.
 	 *
 	 * @return array|WP_Error Report array on success, WP_Error on failure.
 	 */
@@ -21,27 +25,70 @@ class Splecheh_InterpunctionReport {
 
 		$language = splecheh_get_language_code( $post_id );
 
-		$plain_text = Splecheh_SpellCheckReport::prepare_text( $post->post_content, splecheh_ignore_shortcodes_enabled() );
-		$sentences  = self::split_into_sentences( $plain_text );
+		$plain_text   = Splecheh_SpellCheckReport::prepare_text( $post->post_content, splecheh_ignore_shortcodes_enabled() );
+		$sentences    = self::split_into_sentences( $plain_text );
+		$chunks_total = Splecheh_InterpunctionBackend::count_chunks( count( $sentences ) );
 
 		if ( empty( $sentences ) ) {
-			$issues = [];
-		} else {
-			$results = Splecheh_InterpunctionBackend::check( $sentences, $language );
-			if ( is_wp_error( $results ) ) {
-				return $results;
-			}
-			$issues = self::filter_ignored_sentences( $post_id, self::build_issues( $results ), $language );
+			return self::finish_run( $post_id, $post, $language, [], 0, $chunks_total );
 		}
 
+		$results = Splecheh_InterpunctionBackend::check( $sentences, $language );
+
+		if ( is_wp_error( $results ) ) {
+			$partial = self::extract_partial_progress( $results );
+			if ( $partial === null ) {
+				return $results; // Nothing succeeded (or not chunked) — nothing to save.
+			}
+
+			$save_result = self::finish_run( $post_id, $post, $language, $partial['results'], $partial['chunks_processed'], $chunks_total );
+			if ( is_wp_error( $save_result ) ) {
+				return $save_result;
+			}
+
+			return $results; // Report saved (partial), but the check still didn't complete.
+		}
+
+		return self::finish_run( $post_id, $post, $language, $results, $chunks_total, $chunks_total );
+	}
+
+	/**
+	 * Pulls the partial-progress data attached by Splecheh_InterpunctionBackend::check()
+	 * to a chunk failure, if any. Returns null when there's nothing to salvage (e.g. a
+	 * single-call, non-chunked failure), in which case the caller should save nothing.
+	 *
+	 * @return array{results: array, chunks_processed: int}|null
+	 */
+	public static function extract_partial_progress( WP_Error $error ): ?array {
+		$data = $error->get_error_data();
+		if ( ! is_array( $data ) || ! isset( $data['results'] ) || ! is_array( $data['results'] ) ) {
+			return null;
+		}
+		return [
+			'results'          => $data['results'],
+			'chunks_processed' => (int) ( $data['chunks_processed'] ?? 0 ),
+		];
+	}
+
+	/**
+	 * Builds, saves, and returns the report for a (possibly partial) set of results.
+	 *
+	 * @param array[] $results
+	 * @return array|WP_Error
+	 */
+	private static function finish_run( int $post_id, WP_Post $post, string $language, array $results, int $chunks_processed, int $chunks_total ) {
+		$issues = self::filter_ignored_sentences( $post_id, self::build_issues( $results ), $language );
+
 		$report = [
-			'post_id'    => $post_id,
-			'post_title' => $post->post_title,
-			'checked_at' => gmdate( 'c' ),
-			'language'   => $language,
-			'provider'   => Splecheh_InterpunctionBackend::get_type(),
-			'model'      => Splecheh_InterpunctionBackend::get_model_label(),
-			'issues'     => $issues,
+			'post_id'          => $post_id,
+			'post_title'       => $post->post_title,
+			'checked_at'       => gmdate( 'c' ),
+			'language'         => $language,
+			'provider'         => Splecheh_InterpunctionBackend::get_type(),
+			'model'            => Splecheh_InterpunctionBackend::get_model_label(),
+			'chunks_processed' => $chunks_processed,
+			'chunks_total'     => $chunks_total,
+			'issues'           => $issues,
 		];
 
 		$result = self::save_report( $post_id, $report );
@@ -166,6 +213,7 @@ class Splecheh_InterpunctionReport {
 		$saved = file_put_contents( $path, $json ) !== false;
 		if ( $saved ) {
 			update_post_meta( $post_id, '_splecheh_interpunction_issue_count', self::count_unresolved_in_report( $report ) );
+			self::sync_chunk_progress_meta( $post_id, $report );
 		}
 		return $saved;
 	}
@@ -267,7 +315,24 @@ class Splecheh_InterpunctionReport {
 		update_post_meta( $post_id, '_splecheh_interpunction_checked_at', gmdate( 'Y-m-d H:i:s' ) );
 		update_post_meta( $post_id, '_splecheh_interpunction_version', SPLECHEH_VERSION );
 		update_post_meta( $post_id, '_splecheh_interpunction_issue_count', self::count_unresolved_in_report( $report ) );
+		self::sync_chunk_progress_meta( $post_id, $report );
 
 		return true;
+	}
+
+	/**
+	 * Mirrors a report's chunks_processed/chunks_total into post meta, so the list
+	 * table can show progress without reading the report JSON per row. Missing keys
+	 * (reports saved before this field existed) clear the meta rather than writing 0s,
+	 * so old reports read back as "unknown" rather than falsely "0/0 complete".
+	 */
+	private static function sync_chunk_progress_meta( int $post_id, array $report ): void {
+		if ( isset( $report['chunks_processed'], $report['chunks_total'] ) ) {
+			update_post_meta( $post_id, '_splecheh_interpunction_chunks_processed', (int) $report['chunks_processed'] );
+			update_post_meta( $post_id, '_splecheh_interpunction_chunks_total', (int) $report['chunks_total'] );
+		} else {
+			delete_post_meta( $post_id, '_splecheh_interpunction_chunks_processed' );
+			delete_post_meta( $post_id, '_splecheh_interpunction_chunks_total' );
+		}
 	}
 }

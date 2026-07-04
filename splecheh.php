@@ -666,13 +666,14 @@ function splecheh_enqueue_interpunction_assets( string $hook ): void {
 			'bulkRunNonce' => wp_create_nonce( 'splecheh_interpunction_bulk_run' ),
 			'runNowNonce'  => wp_create_nonce( 'splecheh_interpunction_run_now' ),
 			'i18n'         => [
-				'upToDate'    => __( 'Up to date', 'splecheh' ),
-				'viewReport'  => __( 'View Report', 'splecheh' ),
-				'noIssues'    => __( 'No interpunction issues found.', 'splecheh' ),
-				'issuesFound' => __( 'interpunction issue(s) found.', 'splecheh' ),
-				'selectRows'  => __( 'Select at least one post.', 'splecheh' ),
-				'bulkChecked' => __( 'post(s) checked.', 'splecheh' ),
-				'bulkFailed'  => __( 'failed.', 'splecheh' ),
+				'upToDate'         => __( 'Up to date', 'splecheh' ),
+				'viewReport'       => __( 'View Report', 'splecheh' ),
+				'noIssues'         => __( 'No interpunction issues found.', 'splecheh' ),
+				'issuesFound'      => __( 'interpunction issue(s) found.', 'splecheh' ),
+				'selectRows'       => __( 'Select at least one post.', 'splecheh' ),
+				'bulkChecked'      => __( 'post(s) checked.', 'splecheh' ),
+				'bulkFailed'       => __( 'failed.', 'splecheh' ),
+				'incompleteChunks' => __( 'Check did not finish — re-run to process the remaining chunks.', 'splecheh' ),
 			],
 		]
 	);
@@ -1135,24 +1136,44 @@ function splecheh_ajax_interpunction_run(): void {
 	}
 
 	$result = splecheh_run_interpunction_check_for_post( $post_id );
-	if ( is_wp_error( $result ) ) {
-		wp_send_json_error( [ 'message' => $result->get_error_message() ] );
-	}
 
 	require_once SPLECHEH_DIR . 'classes/InterpunctionListTable.php';
 
-	wp_send_json_success(
-		[
-			'post_id'              => $post_id,
-			'issue_count'          => count( $result['issues'] ),
-			'report_url'           => Splecheh_InterpunctionReport::get_report_url( $post_id ),
-			'actions_html'         => Splecheh_InterpunctionListTable::render_actions_html( $post_id ),
-			'checked_at_formatted' => get_date_from_gmt(
-				gmdate( 'Y-m-d H:i:s' ),
-				get_option( 'date_format' ) . ' ' . get_option( 'time_format' )
-			),
-		]
-	);
+	// A chunk failing partway through still saves whatever chunks succeeded (see
+	// Splecheh_InterpunctionReport::run()), so even on failure there may be a fresher
+	// report to reflect in the row — re-read it rather than trusting $result's shape,
+	// since $result is a WP_Error (no report data) in that case.
+	$report = Splecheh_InterpunctionReport::get_report( $post_id );
+
+	if ( is_wp_error( $result ) ) {
+		wp_send_json_error(
+			[
+				'message' => $result->get_error_message(),
+				'row'     => $report ? splecheh_interpunction_row_payload( $post_id, $report ) : null,
+			]
+		);
+	}
+
+	wp_send_json_success( splecheh_interpunction_row_payload( $post_id, $result ) );
+}
+
+/**
+ * Builds the row-refresh payload shared by the success and partial-failure branches
+ * of splecheh_ajax_interpunction_run(), so both update the list table row the same way.
+ */
+function splecheh_interpunction_row_payload( int $post_id, array $report ): array {
+	return [
+		'post_id'              => $post_id,
+		'issue_count'          => count( $report['issues'] ),
+		'report_url'           => Splecheh_InterpunctionReport::get_report_url( $post_id ),
+		'actions_html'         => Splecheh_InterpunctionListTable::render_actions_html( $post_id ),
+		'checked_at_formatted' => get_date_from_gmt(
+			gmdate( 'Y-m-d H:i:s' ),
+			get_option( 'date_format' ) . ' ' . get_option( 'time_format' )
+		),
+		'chunks_processed'     => $report['chunks_processed'] ?? null,
+		'chunks_total'         => $report['chunks_total'] ?? null,
+	];
 }
 
 function splecheh_ajax_interpunction_bulk_run(): void {
@@ -1182,24 +1203,25 @@ function splecheh_ajax_interpunction_bulk_run(): void {
 
 		if ( is_wp_error( $result ) ) {
 			$failure_count++;
-			$results[ $post_id ] = [
-				'success' => false,
-				'message' => $result->get_error_message(),
-			];
+			// A chunk failing partway through can still leave a partial report saved
+			// (see InterpunctionReport::run()) — reflect that row state if so, same as
+			// the single-post AJAX handler.
+			$report              = Splecheh_InterpunctionReport::get_report( $post_id );
+			$results[ $post_id ] = array_merge(
+				[
+					'success' => false,
+					'message' => $result->get_error_message(),
+				],
+				$report ? splecheh_interpunction_row_payload( $post_id, $report ) : []
+			);
 			continue;
 		}
 
 		$success_count++;
-		$results[ $post_id ] = [
-			'success'              => true,
-			'issue_count'          => count( $result['issues'] ),
-			'report_url'           => Splecheh_InterpunctionReport::get_report_url( $post_id ),
-			'actions_html'         => Splecheh_InterpunctionListTable::render_actions_html( $post_id ),
-			'checked_at_formatted' => get_date_from_gmt(
-				gmdate( 'Y-m-d H:i:s' ),
-				get_option( 'date_format' ) . ' ' . get_option( 'time_format' )
-			),
-		];
+		$results[ $post_id ] = array_merge(
+			[ 'success' => true ],
+			splecheh_interpunction_row_payload( $post_id, $result )
+		);
 	}
 
 	if ( $failure_count > 0 ) {

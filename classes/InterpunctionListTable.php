@@ -27,6 +27,7 @@ class Splecheh_InterpunctionListTable extends WP_List_Table {
 			'post_type'    => __( 'Post Type', 'splecheh' ),
 			'last_checked' => __( 'Last Checked', 'splecheh' ),
 			'status'       => __( 'Status', 'splecheh' ),
+			'chunks'       => __( 'Chunks', 'splecheh' ),
 			'issues'       => __( 'Issues', 'splecheh' ),
 			'report'       => __( 'Report', 'splecheh' ),
 			'actions'      => __( 'Actions', 'splecheh' ),
@@ -188,6 +189,9 @@ class Splecheh_InterpunctionListTable extends WP_List_Table {
 			case 'status':
 				return $this->column_status( $item );
 
+			case 'chunks':
+				return $this->column_chunks( $item );
+
 			case 'issues':
 				return $this->column_issues( $item );
 
@@ -218,6 +222,36 @@ class Splecheh_InterpunctionListTable extends WP_List_Table {
 			return '<span class="splecheh-badge splecheh-badge--outdated">' . esc_html__( 'Outdated', 'splecheh' ) . '</span>';
 		}
 		return '<span class="splecheh-badge splecheh-badge--current">' . esc_html__( 'Up to date', 'splecheh' ) . '</span>';
+	}
+
+	/**
+	 * Shows how many of a post's chunks were processed in its saved report (e.g. "6/11"),
+	 * so a check that failed partway through — rather than just not completing silently —
+	 * is visible as incomplete instead of looking identical to a full, successful check.
+	 * Missing meta (never checked, checked before this field existed, or a post with no
+	 * sentences to check) shows as "—" rather than a potentially-misleading "0/0".
+	 */
+	protected function column_chunks( WP_Post $item ): string {
+		if ( ! metadata_exists( 'post', $item->ID, '_splecheh_interpunction_chunks_total' ) ) {
+			return '&mdash;';
+		}
+
+		$processed = (int) get_post_meta( $item->ID, '_splecheh_interpunction_chunks_processed', true );
+		$total     = (int) get_post_meta( $item->ID, '_splecheh_interpunction_chunks_total', true );
+
+		if ( $total <= 0 ) {
+			return '&mdash;';
+		}
+
+		$label = $processed . '/' . $total;
+
+		if ( $processed < $total ) {
+			return '<span class="splecheh-badge splecheh-badge--outdated" title="' .
+				esc_attr__( 'Check did not finish — re-run to process the remaining chunks.', 'splecheh' ) .
+				'">' . esc_html( $label ) . '</span>';
+		}
+
+		return esc_html( $label );
 	}
 
 	/**
