@@ -75,6 +75,10 @@ Run `composer install` to pull in dev dependencies (PHPUnit), then `composer tes
 
 ## Change log
 
+### --- 0.21.0 ---
+- Bumped the plugin version (used as the cache-busting query param on enqueued JS/CSS) — several JS files changed across the 0.20.0 work without a version bump, so a browser with a cached copy of e.g. `interpunction-details.js` from before the "Mark Complete" button existed would show the button but it wouldn't do anything (no click handler in the stale script). The backend itself was never broken — confirmed working end to end in a fresh browser session.
+- Added a "Diff" column to the Interpunction Check Details page, right after "Original": shows the fixed sentence with only the changed word(s) in `<strong>`, so you can see at a glance what an LLM actually changed instead of re-reading the whole sentence. Word-level diff (`Splecheh_InterpunctionReport::diff_highlight()`, LCS-based) included in both the initial page render and the `format_issues_for_details()` payload used by re-run/fix/ignore AJAX responses.
+
 ### --- 0.20.0 ---
 - `tools/llm-wrapper.php` now supports `--provider claude|ollama` and `--model <name>` flags (defaulting to `claude`, unchanged from before), so the Commandline Interpunction Check can call a local Ollama model instead of the `claude` CLI.
 - Added `tools/local-model.sh` to start/stop a local Ollama server outside of systemd, with PID tracking (`tools/.run/ollama.pid`) and a `warm` command to pre-load a model into memory so the first real check isn't slowed by a cold load. It reuses (and won't kill) an already-running Ollama instance, e.g. one managed by systemd.

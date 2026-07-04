@@ -310,10 +310,84 @@ class Splecheh_InterpunctionReport {
 					'fixed'       => $issue['fixed'],
 					'explanation' => $issue['explanation'],
 					'resolved'    => ! empty( $issue['resolved'] ),
+					'diff'        => self::diff_highlight( $issue['original'], $issue['fixed'] ),
 				];
 			},
 			$issues
 		);
+	}
+
+	/**
+	 * Renders $fixed as HTML with the words that differ from $original wrapped in
+	 * <strong>, so a reviewer can see at a glance what an LLM actually changed
+	 * (e.g. just a capitalization or a missing comma) without re-reading the whole
+	 * sentence. Word-level diff via LCS — good enough for the small, mostly-similar
+	 * original/fixed pairs Interpunction Check deals with; not meant as a general
+	 * text-diff tool. Already escapes its output — safe to echo directly.
+	 */
+	public static function diff_highlight( string $original, string $fixed ): string {
+		$orig_words  = preg_split( '/(\s+)/u', trim( $original ), -1, PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_NO_EMPTY );
+		$fixed_words = preg_split( '/(\s+)/u', trim( $fixed ), -1, PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_NO_EMPTY );
+
+		if ( $orig_words === false || $fixed_words === false ) {
+			return esc_html( $fixed );
+		}
+
+		$common_fixed_indices = array_flip( self::lcs_word_indices( $orig_words, $fixed_words ) );
+
+		$html = '';
+		foreach ( $fixed_words as $i => $word ) {
+			if ( trim( $word ) === '' ) {
+				$html .= $word;
+				continue;
+			}
+			$escaped = esc_html( $word );
+			$html   .= isset( $common_fixed_indices[ $i ] ) ? $escaped : '<strong>' . $escaped . '</strong>';
+		}
+
+		return $html;
+	}
+
+	/**
+	 * Returns the indices into $b of a longest common subsequence between word
+	 * arrays $a and $b (classic O(n*m) DP LCS) — used by diff_highlight() to know
+	 * which words in the fixed text are unchanged from the original.
+	 *
+	 * @param string[] $a
+	 * @param string[] $b
+	 * @return int[]
+	 */
+	private static function lcs_word_indices( array $a, array $b ): array {
+		$a = array_values( $a );
+		$b = array_values( $b );
+		$n = count( $a );
+		$m = count( $b );
+
+		$dp = array_fill( 0, $n + 1, array_fill( 0, $m + 1, 0 ) );
+		for ( $i = $n - 1; $i >= 0; $i-- ) {
+			for ( $j = $m - 1; $j >= 0; $j-- ) {
+				$dp[ $i ][ $j ] = $a[ $i ] === $b[ $j ]
+					? $dp[ $i + 1 ][ $j + 1 ] + 1
+					: max( $dp[ $i + 1 ][ $j ], $dp[ $i ][ $j + 1 ] );
+			}
+		}
+
+		$indices = [];
+		$i       = 0;
+		$j       = 0;
+		while ( $i < $n && $j < $m ) {
+			if ( $a[ $i ] === $b[ $j ] ) {
+				$indices[] = $j;
+				$i++;
+				$j++;
+			} elseif ( $dp[ $i + 1 ][ $j ] >= $dp[ $i ][ $j + 1 ] ) {
+				$i++;
+			} else {
+				$j++;
+			}
+		}
+
+		return $indices;
 	}
 
 	/**

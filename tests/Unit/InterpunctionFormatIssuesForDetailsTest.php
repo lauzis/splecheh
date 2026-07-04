@@ -26,6 +26,7 @@ final class InterpunctionFormatIssuesForDetailsTest extends TestCase {
 					'fixed'       => 'This is wrong.',
 					'explanation' => 'Missing capitalization and full stop.',
 					'resolved'    => false,
+					'diff'        => '<strong>This</strong> is <strong>wrong.</strong>',
 				],
 			],
 			$result

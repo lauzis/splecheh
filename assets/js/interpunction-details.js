@@ -100,6 +100,7 @@
 			return '<tr data-index="' + index + '"' + (issue.resolved ? ' class="splecheh-resolved"' : '') + '>' +
 				'<th class="check-column"><input type="checkbox" class="splecheh-row-check"' + checkboxAttrs + '></th>' +
 				'<td>' + escapeHtml(issue.original) + '</td>' +
+				'<td>' + issue.diff + '</td>' +
 				'<td><textarea class="splecheh-interpunction-fixed regular-text" rows="2"' + checkboxAttrs + '>' + escapeHtml(issue.fixed) + '</textarea></td>' +
 				'<td>' + escapeHtml(issue.explanation) + '</td>' +
 				'<td>' + actionsCell + '</td>' +
@@ -111,7 +112,7 @@
 			if (!tbody) return;
 
 			if (issues.length === 0) {
-				tbody.innerHTML = '<tr><td colspan="5">' + splechehInterpunctionDetails.i18n.noIssues + '</td></tr>';
+				tbody.innerHTML = '<tr><td colspan="6">' + splechehInterpunctionDetails.i18n.noIssues + '</td></tr>';
 				return;
 			}
 

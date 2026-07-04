@@ -87,6 +87,7 @@ $issues = $report['issues'] ?? [];
 						<input type="checkbox" id="splecheh-interpunction-select-all">
 					</td>
 					<th><?php esc_html_e( 'Original', 'splecheh' ); ?></th>
+					<th><?php esc_html_e( 'Diff', 'splecheh' ); ?></th>
 					<th><?php esc_html_e( 'Fixed', 'splecheh' ); ?></th>
 					<th><?php esc_html_e( 'Explanation', 'splecheh' ); ?></th>
 					<th><?php esc_html_e( 'Actions', 'splecheh' ); ?></th>
@@ -94,7 +95,7 @@ $issues = $report['issues'] ?? [];
 			</thead>
 			<tbody>
 				<?php if ( empty( $issues ) ) : ?>
-				<tr><td colspan="5"><?php esc_html_e( 'No interpunction issues found.', 'splecheh' ); ?></td></tr>
+				<tr><td colspan="6"><?php esc_html_e( 'No interpunction issues found.', 'splecheh' ); ?></td></tr>
 				<?php endif; ?>
 				<?php foreach ( $issues as $index => $issue ) :
 					$resolved = ! empty( $issue['resolved'] );
@@ -104,6 +105,7 @@ $issues = $report['issues'] ?? [];
 						<input type="checkbox" class="splecheh-row-check" <?php disabled( $resolved ); ?>>
 					</th>
 					<td><?php echo esc_html( $issue['original'] ); ?></td>
+					<td><?php echo Splecheh_InterpunctionReport::diff_highlight( $issue['original'], $issue['fixed'] ); ?></td>
 					<td>
 						<textarea class="splecheh-interpunction-fixed regular-text" rows="2" <?php disabled( $resolved ); ?>><?php echo esc_textarea( $issue['fixed'] ); ?></textarea>
 					</td>
