@@ -100,6 +100,29 @@ if ( ! function_exists( 'delete_post_meta' ) ) {
 	}
 }
 
+if ( ! class_exists( 'WP_Post' ) ) {
+	#[\AllowDynamicProperties]
+	class WP_Post {
+		public function __construct( array $data = [] ) {
+			foreach ( $data as $key => $value ) {
+				$this->$key = $value;
+			}
+		}
+	}
+}
+
+if ( ! function_exists( 'get_post' ) ) {
+	function get_post( int $post_id ) {
+		return $GLOBALS['__splecheh_test_posts'][ $post_id ] ?? null;
+	}
+}
+
+if ( ! function_exists( 'splecheh_invalidate_on_version_change_enabled' ) ) {
+	function splecheh_invalidate_on_version_change_enabled(): bool {
+		return $GLOBALS['__splecheh_test_options']['invalidate_on_version_change'] ?? false;
+	}
+}
+
 if ( ! function_exists( 'metadata_exists' ) ) {
 	function metadata_exists( string $meta_type, int $object_id, string $meta_key ): bool {
 		return array_key_exists( $meta_key, $GLOBALS['__splecheh_test_post_meta'][ $object_id ] ?? [] );

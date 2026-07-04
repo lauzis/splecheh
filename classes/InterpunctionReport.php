@@ -23,6 +23,13 @@ class Splecheh_InterpunctionReport {
 			return new WP_Error( 'invalid_post', __( 'Post not found.', 'splecheh' ) );
 		}
 
+		if ( splecheh_interpunction_require_spellcheck_clean_enabled() && ! Splecheh_SpellCheckReport::is_clean( $post_id ) ) {
+			return new WP_Error(
+				'spellcheck_not_clean',
+				__( 'Spell Check must be up to date with zero unresolved issues before Interpunction Check can run for this post.', 'splecheh' )
+			);
+		}
+
 		$language = splecheh_get_language_code( $post_id );
 
 		$plain_text     = Splecheh_SpellCheckReport::prepare_text( $post->post_content, splecheh_ignore_shortcodes_enabled() );

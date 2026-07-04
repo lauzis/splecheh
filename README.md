@@ -17,6 +17,7 @@ Interpunction Check is a separate, opt-in feature (Settings > Interpunction Chec
 
 Settings:
 - **Enable Interpunction Check** — shows the "Interpunction Check" page in the admin menu.
+- **Require Spell Check First** — enabled by default; skips Interpunction Check for a post (Run Now, bulk runs, background check) until its Spell Check is up to date with zero unresolved issues.
 - **Type** — how the request is made: `Commandline - Local model`, `OpenAI`, `Claude`, or `Gemini`.
 - **Commandline Command** — shown only for the Commandline type (see contract below); defaults to the bundled `tools/llm-wrapper.php`, which calls the `claude` CLI unless the Local Model dropdown below selects an Ollama model.
 - **Local Model (via wrapper)** — shown only for the Commandline type; picks an Ollama model (Qwen 2.5 3B/7B/14B/32B) to append to the Commandline Command as `--provider ollama --model <selection>`. Left on its default, the command runs as typed (`claude`). See [`tools/README.md`](tools/README.md) for setup.
@@ -74,6 +75,9 @@ Built with the assistance of [CodeRabbit](https://coderabbit.ai) for code review
 Run `composer install` to pull in dev dependencies (PHPUnit), then `composer test` to run the test suite. The committed `vendor/` folder is production-only (no dev dependencies), so the plugin works as-is without running Composer.
 
 ## Change log
+
+### --- 0.22.0 ---
+- Added a "Require Spell Check First" Interpunction Check setting (enabled by default): a post is skipped for Interpunction Check — Run Now, bulk runs, and the background check — until its Spell Check is up to date with zero unresolved issues, so punctuation/capitalization isn't "fixed" on text that still has known spelling errors. Backed by `Splecheh_SpellCheckReport::is_clean()`. The background check's post-selection query filters these posts out at the SQL level (not just inside the check itself) — with the default batch size of 1, filtering only after selection would let the cron get stuck retrying the same ineligible post forever instead of moving on. The Settings page "Test" button is unaffected. Verified live: blocked instantly (no LLM call) for a post with unresolved spelling issues, proceeded normally for a clean one.
 
 ### --- 0.21.1 ---
 - Removed the "Report" column from the Spell Check table too (already done for Interpunction Check in 0.21.0) — it duplicated the "View Report" link already in the Actions column.

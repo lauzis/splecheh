@@ -3,7 +3,7 @@
  * Plugin Name: Splecheh - WordPress spellcheck plugin
  * Plugin URI:  https://github.com/lauzis/splecheh
  * Description: Run spell check on all articles and post types to find spelling errors.
- * Version:     0.21.1
+ * Version:     0.22.0
  * Author:      Aivars Lauzis
  * Text Domain: splecheh
  * License:     MIT
@@ -14,7 +14,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'SPLECHEH_VERSION', '0.21.1' );
+define( 'SPLECHEH_VERSION', '0.22.0' );
 define( 'SPLECHEH_DIR', plugin_dir_path( __FILE__ ) );
 define( 'SPLECHEH_LOG_PATH', SPLECHEH_DIR . 'logs' );
 define( 'SPLECHEH_PLUGIN_FILE', __FILE__ );
@@ -284,6 +284,10 @@ function splecheh_register_settings_fields(): void {
 				\Carbon_Fields\Field::make( 'checkbox', 'splecheh_interpunction_enabled', __( 'Enable Interpunction Check', 'splecheh' ) )
 					->set_help_text( __( 'When enabled, an "Interpunction Check" page is added to the menu that uses an LLM to check punctuation and capitalization, sentence by sentence.', 'splecheh' ) ),
 
+				\Carbon_Fields\Field::make( 'checkbox', 'splecheh_interpunction_require_spellcheck_clean', __( 'Require Spell Check First', 'splecheh' ) )
+					->set_default_value( true )
+					->set_help_text( __( 'When enabled (default), Interpunction Check is skipped for a post until its Spell Check is up to date with zero unresolved issues — so punctuation/capitalization isn\'t "fixed" on text that still has known spelling errors. Applies to Run Now, bulk runs, and the background check; the Settings page "Test" button is unaffected.', 'splecheh' ) ),
+
 				\Carbon_Fields\Field::make( 'select', 'splecheh_interpunction_type', __( 'Type', 'splecheh' ) )
 					->set_options(
 						[
@@ -500,6 +504,18 @@ function splecheh_interpunction_enabled(): bool {
 		return false;
 	}
 	return (bool) carbon_get_theme_option( 'splecheh_interpunction_enabled' );
+}
+
+/**
+ * Whether Interpunction Check should be skipped for a post until its Spell
+ * Check is clean (up to date, zero unresolved issues). Defaults to enabled
+ * when Carbon Fields isn't loaded yet, matching the field's own default.
+ */
+function splecheh_interpunction_require_spellcheck_clean_enabled(): bool {
+	if ( ! function_exists( 'carbon_get_theme_option' ) ) {
+		return true;
+	}
+	return (bool) carbon_get_theme_option( 'splecheh_interpunction_require_spellcheck_clean' );
 }
 
 /**

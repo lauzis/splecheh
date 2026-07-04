@@ -520,4 +520,34 @@ class Splecheh_SpellCheckReport {
 
 		return $check_version && $stored_version !== $current_version;
 	}
+
+	/**
+	 * Whether a post's Spell Check is up to date and has zero unresolved issues.
+	 * Used to gate Interpunction Check on Spell Check being clean first — see
+	 * splecheh_interpunction_require_spellcheck_clean_enabled().
+	 */
+	public static function is_clean( int $post_id ): bool {
+		$checked_at = get_post_meta( $post_id, '_splecheh_checked_at', true );
+		if ( ! $checked_at || ! metadata_exists( 'post', $post_id, '_splecheh_issue_count' ) ) {
+			return false;
+		}
+
+		if ( (int) get_post_meta( $post_id, '_splecheh_issue_count', true ) > 0 ) {
+			return false;
+		}
+
+		$post = get_post( $post_id );
+		if ( ! $post ) {
+			return false;
+		}
+
+		$stored_version = get_post_meta( $post_id, '_splecheh_version', true );
+
+		return ! self::is_outdated(
+			$checked_at,
+			$post->post_modified_gmt,
+			$stored_version !== '' ? (string) $stored_version : null,
+			splecheh_invalidate_on_version_change_enabled()
+		);
+	}
 }

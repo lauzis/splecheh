@@ -111,6 +111,33 @@ class Splecheh_InterpunctionCron {
 	}
 
 	/**
+	 * Builds the JOIN/condition needed to also require Spell Check to be clean
+	 * (up to date, zero unresolved issues) before a post is eligible, when that
+	 * setting is enabled. Returns empty pieces (no-op) when it's disabled.
+	 *
+	 * Essential, not just an optimization: with the default batch size of 1, if
+	 * this filtering happened only inside Splecheh_InterpunctionReport::run(),
+	 * the cron would keep re-selecting the same oldest post every tick — even
+	 * though it always fails the Spell Check gate — and never make progress on
+	 * any other post.
+	 *
+	 * @return array{join: string, condition: string}
+	 */
+	private static function spellcheck_clean_sql_parts(): array {
+		if ( ! splecheh_interpunction_require_spellcheck_clean_enabled() ) {
+			return [ 'join' => '', 'condition' => '' ];
+		}
+
+		global $wpdb;
+
+		return [
+			'join'      => "INNER JOIN {$wpdb->postmeta} pm_sc_checked ON ( pm_sc_checked.post_id = p.ID AND pm_sc_checked.meta_key = '_splecheh_checked_at' )
+			 INNER JOIN {$wpdb->postmeta} pm_sc_issues ON ( pm_sc_issues.post_id = p.ID AND pm_sc_issues.meta_key = '_splecheh_issue_count' )",
+			'condition' => " AND pm_sc_checked.meta_value >= p.post_modified_gmt AND CAST( pm_sc_issues.meta_value AS UNSIGNED ) = 0",
+		];
+	}
+
+	/**
 	 * Returns IDs of posts that have never been interpunction-checked or are outdated.
 	 *
 	 * @param string[] $post_types
@@ -120,6 +147,7 @@ class Splecheh_InterpunctionCron {
 		global $wpdb;
 
 		$placeholders = implode( ',', array_fill( 0, count( $post_types ), '%s' ) );
+		$spellcheck   = self::spellcheck_clean_sql_parts();
 		$params       = array_merge( $post_types, [ $limit ] );
 
 		// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
@@ -128,9 +156,11 @@ class Splecheh_InterpunctionCron {
 			 FROM {$wpdb->posts} p
 			 LEFT JOIN {$wpdb->postmeta} pm
 			     ON pm.post_id = p.ID AND pm.meta_key = '_splecheh_interpunction_checked_at'
+			 {$spellcheck['join']}
 			 WHERE p.post_type IN ($placeholders)
 			   AND p.post_status = 'publish'
 			   AND (pm.meta_value IS NULL OR p.post_modified_gmt > pm.meta_value)
+			   {$spellcheck['condition']}
 			 ORDER BY p.post_modified ASC
 			 LIMIT %d",
 			...$params
@@ -149,6 +179,7 @@ class Splecheh_InterpunctionCron {
 		global $wpdb;
 
 		$placeholders = implode( ',', array_fill( 0, count( $post_types ), '%s' ) );
+		$spellcheck   = self::spellcheck_clean_sql_parts();
 
 		// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		$sql = $wpdb->prepare(
@@ -156,9 +187,11 @@ class Splecheh_InterpunctionCron {
 			 FROM {$wpdb->posts} p
 			 LEFT JOIN {$wpdb->postmeta} pm
 			     ON pm.post_id = p.ID AND pm.meta_key = '_splecheh_interpunction_checked_at'
+			 {$spellcheck['join']}
 			 WHERE p.post_type IN ($placeholders)
 			   AND p.post_status = 'publish'
-			   AND (pm.meta_value IS NULL OR p.post_modified_gmt > pm.meta_value)",
+			   AND (pm.meta_value IS NULL OR p.post_modified_gmt > pm.meta_value)
+			   {$spellcheck['condition']}",
 			...$post_types
 		);
 		// phpcs:enable
