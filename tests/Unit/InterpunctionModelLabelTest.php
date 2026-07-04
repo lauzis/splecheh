@@ -21,6 +21,8 @@ final class InterpunctionModelLabelTest extends TestCase {
 			'plain claude command'          => [ 'claude -p', 'claude -p' ],
 			'default wrapper, no flags'     => [ 'php tools/llm-wrapper.php', 'claude' ],
 			'default wrapper with timeout'  => [ 'php /home/lauzis/Dev/www/gudlenieks.lv/wp-content/plugins/splecheh/tools/llm-wrapper.php --timeout 300', 'claude' ],
+			'wrapper with --provider gemini' => [ 'php tools/llm-wrapper.php --provider gemini', 'gemini' ],
+			'wrapper with --provider codex'  => [ 'php tools/llm-wrapper.php --provider codex --timeout 300', 'codex' ],
 			'empty command'                 => [ '', '' ],
 		];
 	}

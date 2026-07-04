@@ -1,13 +1,15 @@
 #!/usr/bin/env php
 <?php
 /**
- * Commandline wrapper for Splecheh's Interpunction Check that calls either
- * the locally installed `claude` CLI (Claude Code) or a local Ollama model,
+ * Commandline wrapper for Splecheh's Interpunction Check that calls a locally
+ * installed CLI (`claude`, `gemini`, or `codex`) or a local Ollama model,
  * instead of a hosted API.
  *
  * Set as the "Commandline Command" in Settings > Interpunction Check:
  *   php /absolute/path/to/wp-content/plugins/splecheh/tools/llm-wrapper.php
  *   php /absolute/path/to/wp-content/plugins/splecheh/tools/llm-wrapper.php --provider ollama --model qwen2.5:7b
+ *   php /absolute/path/to/wp-content/plugins/splecheh/tools/llm-wrapper.php --provider gemini
+ *   php /absolute/path/to/wp-content/plugins/splecheh/tools/llm-wrapper.php --provider codex
  *   php /absolute/path/to/wp-content/plugins/splecheh/tools/llm-wrapper.php --timeout 300
  *
  * Splecheh runs this with the configured command plus one appended argument:
@@ -31,6 +33,14 @@ use Symfony\Component\Process\Process;
 // PHP-FPM workers don't inherit an interactive shell's PATH (e.g. ~/.local/bin),
 // so a bare "claude" won't resolve unless PATH is set up for the pool.
 define( 'CLAUDE_BIN', getenv( 'SPLECHEH_CLAUDE_BIN' ) ?: '/home/lauzis/.local/bin/claude' );
+
+// Path to the gemini CLI (Gemini CLI), overridable via SPLECHEH_GEMINI_BIN
+// for the same PHP-FPM PATH reason as CLAUDE_BIN above.
+define( 'GEMINI_BIN', getenv( 'SPLECHEH_GEMINI_BIN' ) ?: 'gemini' );
+
+// Path to the codex CLI (OpenAI Codex CLI), overridable via SPLECHEH_CODEX_BIN
+// for the same PHP-FPM PATH reason as CLAUDE_BIN above.
+define( 'CODEX_BIN', getenv( 'SPLECHEH_CODEX_BIN' ) ?: 'codex' );
 
 // Ollama API base URL, overridable via SPLECHEH_OLLAMA_HOST (must match the
 // host tools/local-model.sh starts the server on).
@@ -93,16 +103,26 @@ function parse_args( array $argv ): array {
 
 [ $options, $payload_json ] = parse_args( $argv );
 
-// CLAUDE_TIMEOUT/OLLAMA_TIMEOUT: --timeout on the command line wins over the
-// SPLECHEH_*_TIMEOUT env vars, which win over these defaults. The default is
-// only enough for small batches (a handful of sentences); a full post can
-// easily need several minutes. Whatever value is used here should be kept
-// slightly below Splecheh's own `splecheh_interpunction_command_timeout`
-// filter (default 60s, also needs raising for real posts) so this script
-// reports a real error instead of being killed mid-request.
+// *_TIMEOUT: --timeout on the command line wins over the SPLECHEH_*_TIMEOUT
+// env vars, which win over these defaults. The default is only enough for
+// small batches (a handful of sentences); a full post can easily need
+// several minutes. Whatever value is used here should be kept slightly below
+// Splecheh's own `splecheh_interpunction_command_timeout` filter (default
+// 60s, also needs raising for real posts) so this script reports a real
+// error instead of being killed mid-request.
 define(
 	'CLAUDE_TIMEOUT',
 	$options['timeout'] ?? (float) ( getenv( 'SPLECHEH_CLAUDE_TIMEOUT' ) ?: 55 )
+);
+
+define(
+	'GEMINI_TIMEOUT',
+	$options['timeout'] ?? (float) ( getenv( 'SPLECHEH_GEMINI_TIMEOUT' ) ?: 55 )
+);
+
+define(
+	'CODEX_TIMEOUT',
+	$options['timeout'] ?? (float) ( getenv( 'SPLECHEH_CODEX_TIMEOUT' ) ?: 55 )
 );
 
 // Local CPU inference is much slower than a hosted API — see CLAUDE_TIMEOUT above.
@@ -142,6 +162,87 @@ function run_claude( string $instruction ): string {
 	if ( ! $process->isSuccessful() ) {
 		$stderr = trim( $process->getErrorOutput() );
 		fail( $stderr !== '' ? $stderr : 'claude CLI exited with code ' . $process->getExitCode() );
+	}
+
+	return $process->getOutput();
+}
+
+/**
+ * Sends $instruction to the gemini CLI (Gemini CLI) via -p/--prompt (headless
+ * mode) and returns its stdout.
+ *
+ * Requires GEMINI_API_KEY (or GOOGLE_API_KEY) set in the environment PHP-FPM
+ * runs under. Without it, Gemini CLI falls back to its interactive OAuth
+ * browser login flow, which cannot complete in a real headless/cron context
+ * (no browser, no cached token) — the request will hang or fail rather than
+ * generate anything. A locally cached login from prior interactive use can
+ * mask this during manual testing; don't rely on that for production.
+ *
+ * Note: unlike claude's --tools '', Gemini CLI has no documented flag to
+ * disable tool use entirely (only --approval-mode/--yolo, which control
+ * *how* tool calls are approved, not whether the model can attempt them).
+ * A self-contained punctuation-fixing prompt shouldn't prompt the model to
+ * reach for tools in the first place, but if this ever hangs in production,
+ * that's the first thing to look at — non-interactive/no-TTY use is expected
+ * to skip approval prompts rather than hang, but that isn't documented
+ * explicitly either.
+ */
+function run_gemini( string $instruction ): string {
+	$process = new Process(
+		[
+			GEMINI_BIN,
+			'-p',
+			$instruction,
+		]
+	);
+	$process->setTimeout( GEMINI_TIMEOUT );
+
+	try {
+		$process->run();
+	} catch ( \Throwable $e ) {
+		fail( 'gemini CLI failed to run: ' . $e->getMessage() );
+	}
+
+	if ( ! $process->isSuccessful() ) {
+		$stderr = trim( $process->getErrorOutput() );
+		fail( $stderr !== '' ? $stderr : 'gemini CLI exited with code ' . $process->getExitCode() );
+	}
+
+	return $process->getOutput();
+}
+
+/**
+ * Sends $instruction to the codex CLI (OpenAI Codex CLI) via `codex exec` and
+ * returns its stdout. `codex exec` runs non-interactively by design (no
+ * approval-prompt/hang risk) and defaults to a read-only sandbox — appropriate
+ * here since this wrapper only needs text in, text out, never file access.
+ *
+ * Requires a one-time login as whichever user PHP-FPM runs as, before this
+ * will work: `printenv OPENAI_API_KEY | codex login --with-api-key`. Unlike
+ * Gemini's GEMINI_API_KEY, this isn't an env var read per-request — it's a
+ * cached credential (keyring or file, see codex's cli_auth_credentials_store
+ * config) that `codex exec` reuses. Without that login, expect an auth error
+ * rather than a hang, since `codex exec` doesn't fall back to opening a browser.
+ */
+function run_codex( string $instruction ): string {
+	$process = new Process(
+		[
+			CODEX_BIN,
+			'exec',
+			$instruction,
+		]
+	);
+	$process->setTimeout( CODEX_TIMEOUT );
+
+	try {
+		$process->run();
+	} catch ( \Throwable $e ) {
+		fail( 'codex CLI failed to run: ' . $e->getMessage() );
+	}
+
+	if ( ! $process->isSuccessful() ) {
+		$stderr = trim( $process->getErrorOutput() );
+		fail( $stderr !== '' ? $stderr : 'codex CLI exited with code ' . $process->getExitCode() );
 	}
 
 	return $process->getOutput();
@@ -196,11 +297,11 @@ function run_ollama( string $instruction, ?string $model ): string {
 }
 
 if ( $payload_json === '' ) {
-	fail( 'Usage: ' . basename( __FILE__ ) . " [--provider claude|ollama] [--model <name>] [--timeout <seconds>] '<json payload>'" );
+	fail( 'Usage: ' . basename( __FILE__ ) . " [--provider claude|gemini|codex|ollama] [--model <name>] [--timeout <seconds>] '<json payload>'" );
 }
 
-if ( ! in_array( $options['provider'], [ 'claude', 'ollama' ], true ) ) {
-	fail( "Unknown provider '{$options['provider']}'. Expected 'claude' or 'ollama'." );
+if ( ! in_array( $options['provider'], [ 'claude', 'gemini', 'codex', 'ollama' ], true ) ) {
+	fail( "Unknown provider '{$options['provider']}'. Expected 'claude', 'gemini', 'codex', or 'ollama'." );
 }
 
 $payload = json_decode( $payload_json, true );
@@ -222,9 +323,21 @@ $instruction = $prompt
 	. ' sentence, in the same order as given. The input sentences are given as a'
 	. " JSON array below.\n\n" . json_encode( $sentences );
 
-$output = $options['provider'] === 'ollama'
-	? run_ollama( $instruction, $options['model'] )
-	: run_claude( $instruction );
+switch ( $options['provider'] ) {
+	case 'ollama':
+		$output = run_ollama( $instruction, $options['model'] );
+		break;
+	case 'gemini':
+		$output = run_gemini( $instruction );
+		break;
+	case 'codex':
+		$output = run_codex( $instruction );
+		break;
+	case 'claude':
+	default:
+		$output = run_claude( $instruction );
+		break;
+}
 
 $output = trim( $output );
 $output = (string) preg_replace( '/^```(?:json)?\s*|\s*```$/i', '', $output );

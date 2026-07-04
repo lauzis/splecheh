@@ -6,8 +6,9 @@ model"). See the main [README.md](../README.md#commandline-contract) for the
 contract itself.
 
 - **`llm-wrapper.php`** — the command you point Settings > Interpunction Check
-  > Commandline Command at. Sends each batch of sentences to either the
-  `claude` CLI or a local Ollama model and returns the required JSON.
+  > Commandline Command at. Sends each batch of sentences to `claude`,
+  `gemini`, or `codex` (CLIs), or a local Ollama model, and returns the
+  required JSON.
 - **`local-model.sh`** — starts/stops a local Ollama server for
   `llm-wrapper.php --provider ollama` to talk to, without needing root or a
   systemd service.
@@ -28,6 +29,37 @@ workers don't inherit your shell's `PATH`), set its absolute path via the
 ```ini
 env[SPLECHEH_CLAUDE_BIN] = /home/youruser/.local/bin/claude
 ```
+
+## Option A2: Gemini CLI or Codex CLI
+
+Same idea as Option A, using a different coding-agent CLI instead of `claude`:
+
+```
+Commandline Command: php /absolute/path/to/wp-content/plugins/splecheh/tools/llm-wrapper.php --provider gemini
+Commandline Command: php /absolute/path/to/wp-content/plugins/splecheh/tools/llm-wrapper.php --provider codex
+```
+
+Both need their CLI installed and, importantly, **authenticated in a way that
+works without an interactive browser** — PHP-FPM has no browser to complete
+an OAuth login in:
+
+- **Gemini CLI**: set `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) in the PHP-FPM
+  pool config. Without it, Gemini CLI falls back to an interactive OAuth
+  login flow that cannot complete in a real cron/PHP-FPM context — the
+  request will hang or fail. (A cached login from prior interactive use on
+  the same machine can mask this during manual testing; don't rely on that
+  for production.)
+- **Codex CLI**: log in once, as whichever user PHP-FPM runs as, via
+  `printenv OPENAI_API_KEY | codex login --with-api-key` — this caches a
+  credential (keyring or file) that `codex exec` reuses on later calls. It's
+  not a per-request env var like Gemini's.
+
+If the binary isn't on the PHP-FPM pool's `PATH`, set its absolute path via
+`SPLECHEH_GEMINI_BIN` / `SPLECHEH_CODEX_BIN`, same as `SPLECHEH_CLAUDE_BIN`
+above.
+
+Neither of these has been benchmarked here — if you use one, test it against
+your own posts first (Settings > Interpunction Check > Test button).
 
 ### Timeouts and chunking for real posts, not just test batches
 
@@ -180,6 +212,10 @@ load on the first real check.
 |---|---|---|---|
 | `SPLECHEH_CLAUDE_BIN` | `llm-wrapper.php` | `/home/lauzis/.local/bin/claude` | Path to the `claude` CLI |
 | `SPLECHEH_CLAUDE_TIMEOUT` | `llm-wrapper.php` | `55` (seconds) | Max time to wait for a `claude` response — raise for real posts |
+| `SPLECHEH_GEMINI_BIN` | `llm-wrapper.php` | `gemini` (resolved via `PATH`) | Path to the `gemini` CLI |
+| `SPLECHEH_GEMINI_TIMEOUT` | `llm-wrapper.php` | `55` (seconds) | Max time to wait for a `gemini` response — raise for real posts |
+| `SPLECHEH_CODEX_BIN` | `llm-wrapper.php` | `codex` (resolved via `PATH`) | Path to the `codex` CLI |
+| `SPLECHEH_CODEX_TIMEOUT` | `llm-wrapper.php` | `55` (seconds) | Max time to wait for a `codex` response — raise for real posts |
 | `SPLECHEH_OLLAMA_HOST` | both scripts | `http://127.0.0.1:11434` | Ollama server URL |
 | `SPLECHEH_OLLAMA_MODEL` | both scripts | `qwen2.5:7b` | Default model when `--model` is omitted |
 | `SPLECHEH_OLLAMA_KEEP_ALIVE` | both scripts | `10m` | How long Ollama keeps the model loaded after a request |

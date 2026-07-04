@@ -248,10 +248,12 @@ class Splecheh_InterpunctionBackend {
 
 	/**
 	 * Pulls a "--model <name>" value out of a Commandline Command string (as used
-	 * by tools/llm-wrapper.php's --model flag). Without one, a command that's
-	 * clearly tools/llm-wrapper.php is using its default "claude" provider, so
-	 * that's a cleaner label than the full path/flags; anything else falls back
-	 * to the command string itself (e.g. a plain "claude -p"), so it still shows
+	 * by tools/llm-wrapper.php's --model flag, only meaningful for --provider
+	 * ollama). Without one, a command that's clearly tools/llm-wrapper.php is
+	 * using whichever CLI its --provider flag names (claude/gemini/codex only
+	 * take a model implicitly via their own config, not a --model flag) — that's
+	 * a cleaner label than the full path/flags. Anything else falls back to the
+	 * command string itself (e.g. a plain "claude -p"), so it still shows
 	 * something meaningful instead of nothing.
 	 */
 	public static function extract_model_label( string $command ): string {
@@ -259,6 +261,9 @@ class Splecheh_InterpunctionBackend {
 			return $matches[1];
 		}
 		if ( strpos( $command, 'llm-wrapper.php' ) !== false ) {
+			if ( preg_match( '/--provider[= ]+(\S+)/', $command, $matches ) ) {
+				return $matches[1];
+			}
 			return 'claude';
 		}
 		return trim( $command );

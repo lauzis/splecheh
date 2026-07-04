@@ -42,7 +42,7 @@ The script must print a JSON array to stdout, one item per input sentence and in
 
 The process is run with a timeout (60 seconds by default, filterable via `splecheh_interpunction_command_timeout`); a command that hangs or exceeds the timeout fails with a clear error instead of hanging the request.
 
-A non-zero exit code is treated as a failure, with stderr shown as the error message. See [`bin/interpunction-check.sh`](bin/interpunction-check.sh) for a working (dummy, pass-through) reference implementation of this contract, or [`tools/llm-wrapper.php`](tools/llm-wrapper.php) for a real one that calls the `claude` CLI or a local Ollama model — see [`tools/README.md`](tools/README.md) for setup, including `tools/local-model.sh` to start/stop a local Ollama server.
+A non-zero exit code is treated as a failure, with stderr shown as the error message. See [`bin/interpunction-check.sh`](bin/interpunction-check.sh) for a working (dummy, pass-through) reference implementation of this contract, or [`tools/llm-wrapper.php`](tools/llm-wrapper.php) for a real one that calls `claude`, `gemini`, or `codex` (CLIs), or a local Ollama model — see [`tools/README.md`](tools/README.md) for setup, including `tools/local-model.sh` to start/stop a local Ollama server.
 
 OpenAI/Claude/Gemini are called directly via `wp_remote_post` (no composer SDK) using each provider's default chat/completion endpoint.
 
@@ -85,6 +85,7 @@ Run `composer install` to pull in dev dependencies (PHPUnit), then `composer tes
 - Added a "Spell Check" column to the Interpunction Check table, showing "Clean", "Outdated", "N issue(s)", or "Never checked" for each post — so it's visible at a glance whether the "Require Spell Check First" precondition is met, without switching to the Spell Check table.
 - Fixed the saved report's "model" field showing the entire Commandline Command (including the server's file path) when it had no `--model` flag — a plain `tools/llm-wrapper.php` command (the default, `claude`) now labels itself "claude" instead.
 - Added a note to the "Local Model" dropdown, Help page, and `tools/README.md` that the Qwen models are more proof-of-concept than production-ready: benchmarking so far focused on speed with short English sentences, and quality on real content in smaller/less-common languages hasn't been specifically verified.
+- `tools/llm-wrapper.php` now also supports `--provider gemini` (Gemini CLI) and `--provider codex` (OpenAI Codex CLI), alongside the existing `claude`/`ollama`. Both need non-interactive auth set up beforehand — `GEMINI_API_KEY`/`GOOGLE_API_KEY` for Gemini CLI, a one-time `codex login --with-api-key` for Codex CLI — since PHP-FPM has no browser to complete an OAuth login in; see `tools/README.md` "Option A2". Neither has been benchmarked here yet.
 
 ### --- 0.21.1 ---
 - Removed the "Report" column from the Spell Check table too (already done for Interpunction Check in 0.21.0) — it duplicated the "View Report" link already in the Actions column.
