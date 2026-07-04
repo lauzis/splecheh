@@ -7,7 +7,26 @@ if ( ! defined( 'ABSPATH' ) ) {
 <div class="wrap">
 	<h1><?php esc_html_e( 'Help', 'splecheh' ); ?></h1>
 
-	<h2><?php esc_html_e( 'Interpunction Check', 'splecheh' ); ?></h2>
+	<h2><?php esc_html_e( 'Table of Contents', 'splecheh' ); ?></h2>
+	<ul style="list-style:disc;padding-left:1.5em;">
+		<li>
+			<a href="#interpunction-check"><?php esc_html_e( 'Interpunction Check', 'splecheh' ); ?></a>
+			<ul style="list-style:circle;padding-left:1.5em;">
+				<li><a href="#commandline-contract"><?php esc_html_e( 'Commandline Contract', 'splecheh' ); ?></a></li>
+				<li><a href="#running-a-local-model"><?php esc_html_e( 'Running a Local Model', 'splecheh' ); ?></a></li>
+			</ul>
+		</li>
+		<li>
+			<a href="#setting-up-a-real-cron-job"><?php esc_html_e( 'Setting Up a Real Cron Job', 'splecheh' ); ?></a>
+			<ul style="list-style:circle;padding-left:1.5em;">
+				<li><a href="#step-1-disable-wp-cron"><?php esc_html_e( 'Step 1 — Disable WP-Cron', 'splecheh' ); ?></a></li>
+				<li><a href="#step-2-add-a-system-cron-entry"><?php esc_html_e( 'Step 2 — Add a System Cron Entry', 'splecheh' ); ?></a></li>
+				<li><a href="#why-real-cron"><?php esc_html_e( 'Why Real Cron?', 'splecheh' ); ?></a></li>
+			</ul>
+		</li>
+	</ul>
+
+	<h2 id="interpunction-check"><?php esc_html_e( 'Interpunction Check', 'splecheh' ); ?></h2>
 
 	<p>
 		<?php esc_html_e( 'Interpunction Check uses an LLM to fix punctuation and capitalization, sentence by sentence, separately from the aspell-based Spell Check. It is off by default — enable it under Settings > Interpunction Check.', 'splecheh' ); ?>
@@ -23,7 +42,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 		<li><?php esc_html_e( 'Prompt — instruction sent to the LLM; use {language} as a placeholder for the post\'s language.', 'splecheh' ); ?></li>
 	</ul>
 
-	<h3><?php esc_html_e( 'Commandline Contract', 'splecheh' ); ?></h3>
+	<h3 id="commandline-contract"><?php esc_html_e( 'Commandline Contract', 'splecheh' ); ?></h3>
 
 	<p>
 		<?php esc_html_e( 'For the Commandline type, Splecheh runs the configured shell command with a single argument: a JSON object of the shape {language, prompt, sentences}. This keeps API keys out of WordPress — the script is responsible for its own credentials.', 'splecheh' ); ?>
@@ -37,19 +56,41 @@ if ( ! defined( 'ABSPATH' ) ) {
 		<?php esc_html_e( 'A non-zero exit code is treated as a failure, with stderr shown as the error message. See bin/interpunction-check.sh in the plugin folder for a working (dummy) reference implementation of this contract.', 'splecheh' ); ?>
 	</p>
 
-	<h2><?php esc_html_e( 'Setting Up a Real Cron Job', 'splecheh' ); ?></h2>
+	<h3 id="running-a-local-model"><?php esc_html_e( 'Running a Local Model', 'splecheh' ); ?></h3>
+
+	<p>
+		<?php esc_html_e( 'The bundled tools/llm-wrapper.php Commandline script (the default) can call either the claude CLI or a local Ollama model instead of a paid API — useful if you\'d rather not send post content to a third party, or want to avoid API costs. To run a model locally:', 'splecheh' ); ?>
+	</p>
+
+	<ol style="padding-left:1.5em;">
+		<li><?php esc_html_e( 'Install Ollama and pull a model, e.g.:', 'splecheh' ); ?>
+			<pre style="background:#1e1e1e;color:#d4d4d4;padding:1em;border-radius:4px;font-size:13px;overflow:auto;">curl -fsSL https://ollama.com/install.sh | sh
+ollama pull qwen2.5:7b</pre>
+		</li>
+		<li><?php esc_html_e( 'Start the model server with the bundled helper script (or rely on Ollama\'s own systemd service, if it installed one):', 'splecheh' ); ?>
+			<pre style="background:#1e1e1e;color:#d4d4d4;padding:1em;border-radius:4px;font-size:13px;overflow:auto;">wp-content/plugins/splecheh/tools/local-model.sh start --model qwen2.5:7b</pre>
+		</li>
+		<li><?php esc_html_e( 'In Settings > Interpunction Check, leave Commandline Command as the default tools/llm-wrapper.php, and pick your model from the "Local Model (via wrapper)" dropdown — it appends --provider ollama --model <selection> to the command automatically.', 'splecheh' ); ?></li>
+		<li><?php esc_html_e( 'Raise the timeout for real posts (a single test sentence is fast, but a whole post needs much longer): set the Commandline Command\'s --timeout flag (e.g. --timeout 300) and raise Splecheh\'s own splecheh_interpunction_command_timeout filter to match.', 'splecheh' ); ?></li>
+	</ol>
+
+	<p>
+		<?php esc_html_e( 'Pick a model size that\'s actually fast enough for your hardware, not just one that fits in RAM — without a GPU with enough VRAM, larger models can be far too slow to be practical for this feature. See tools/README.md in the plugin folder for measured speeds per model size, the full env var reference, and tools/benchmark.sh to compare providers/models on your own server.', 'splecheh' ); ?>
+	</p>
+
+	<h2 id="setting-up-a-real-cron-job"><?php esc_html_e( 'Setting Up a Real Cron Job', 'splecheh' ); ?></h2>
 
 	<p>
 		<?php esc_html_e( 'By default, WordPress uses a pseudo-cron ("WP-Cron") that only fires when someone visits your site. This means scheduled tasks are unreliable on low-traffic sites. A real system cron job is faster and guaranteed to run on time.', 'splecheh' ); ?>
 	</p>
 
-	<h3><?php esc_html_e( 'Step 1 — Disable WP-Cron', 'splecheh' ); ?></h3>
+	<h3 id="step-1-disable-wp-cron"><?php esc_html_e( 'Step 1 — Disable WP-Cron', 'splecheh' ); ?></h3>
 
 	<p><?php esc_html_e( 'Add this line to your wp-config.php (before the "That\'s all, stop editing!" comment):', 'splecheh' ); ?></p>
 
 	<pre style="background:#1e1e1e;color:#d4d4d4;padding:1em;border-radius:4px;font-size:13px;overflow:auto;">define( 'DISABLE_WP_CRON', true );</pre>
 
-	<h3><?php esc_html_e( 'Step 2 — Add a System Cron Entry', 'splecheh' ); ?></h3>
+	<h3 id="step-2-add-a-system-cron-entry"><?php esc_html_e( 'Step 2 — Add a System Cron Entry', 'splecheh' ); ?></h3>
 
 	<p><?php esc_html_e( 'Run crontab -e on your server and add one of the following entries. Replace the URL or path with your own site.', 'splecheh' ); ?></p>
 
@@ -63,7 +104,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 		<?php esc_html_e( 'Both examples run every 5 minutes. Adjust the interval to match your needs.', 'splecheh' ); ?>
 	</p>
 
-	<h3><?php esc_html_e( 'Why Real Cron?', 'splecheh' ); ?></h3>
+	<h3 id="why-real-cron"><?php esc_html_e( 'Why Real Cron?', 'splecheh' ); ?></h3>
 
 	<ul style="list-style:disc;padding-left:1.5em;">
 		<li><?php esc_html_e( 'Reliability — tasks run even when no one is visiting the site.', 'splecheh' ); ?></li>

@@ -77,6 +77,7 @@ Run `composer install` to pull in dev dependencies (PHPUnit), then `composer tes
 
 ### --- 0.21.1 ---
 - Removed the "Report" column from the Spell Check table too (already done for Interpunction Check in 0.21.0) — it duplicated the "View Report" link already in the Actions column.
+- Added a Table of Contents to the Help page, and a "Running a Local Model" section under Interpunction Check summarizing how to run the Commandline type against a local Ollama model via `tools/llm-wrapper.php`/`tools/local-model.sh`, with a pointer to `tools/README.md` for full setup and benchmarks.
 
 ### --- 0.21.0 ---
 - Bumped the plugin version (used as the cache-busting query param on enqueued JS/CSS) — several JS files changed across the 0.20.0 work without a version bump, so a browser with a cached copy of e.g. `interpunction-details.js` from before the "Mark Complete" button existed would show the button but it wouldn't do anything (no click handler in the stale script). The backend itself was never broken — confirmed working end to end in a fresh browser session.
