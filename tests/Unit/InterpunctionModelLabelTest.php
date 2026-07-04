@@ -16,11 +16,12 @@ final class InterpunctionModelLabelTest extends TestCase {
 
 	public static function commandProvider(): array {
 		return [
-			'ollama with --model flag'  => [ 'php tools/llm-wrapper.php --provider ollama --model qwen2.5:7b', 'qwen2.5:7b' ],
-			'--model= form'             => [ 'php tools/llm-wrapper.php --model=qwen2.5:32b', 'qwen2.5:32b' ],
-			'plain claude command'      => [ 'claude -p', 'claude -p' ],
-			'default wrapper, no flags' => [ 'php tools/llm-wrapper.php', 'php tools/llm-wrapper.php' ],
-			'empty command'             => [ '', '' ],
+			'ollama with --model flag'      => [ 'php tools/llm-wrapper.php --provider ollama --model qwen2.5:7b', 'qwen2.5:7b' ],
+			'--model= form'                 => [ 'php tools/llm-wrapper.php --model=qwen2.5:32b', 'qwen2.5:32b' ],
+			'plain claude command'          => [ 'claude -p', 'claude -p' ],
+			'default wrapper, no flags'     => [ 'php tools/llm-wrapper.php', 'claude' ],
+			'default wrapper with timeout'  => [ 'php /home/lauzis/Dev/www/gudlenieks.lv/wp-content/plugins/splecheh/tools/llm-wrapper.php --timeout 300', 'claude' ],
+			'empty command'                 => [ '', '' ],
 		];
 	}
 

@@ -83,6 +83,7 @@ Run `composer install` to pull in dev dependencies (PHPUnit), then `composer tes
 - The Settings page's active tab title is now bold, so it's clearer at a glance which section is showing.
 - Moved "Logs" to right before "Settings" in the Splecheh admin sidebar submenu (was between Help and Ignore List): Spell Check, Interpunction Check, Help, Ignore List, Logs, Settings.
 - Added a "Spell Check" column to the Interpunction Check table, showing "Clean", "Outdated", "N issue(s)", or "Never checked" for each post — so it's visible at a glance whether the "Require Spell Check First" precondition is met, without switching to the Spell Check table.
+- Fixed the saved report's "model" field showing the entire Commandline Command (including the server's file path) when it had no `--model` flag — a plain `tools/llm-wrapper.php` command (the default, `claude`) now labels itself "claude" instead.
 
 ### --- 0.21.1 ---
 - Removed the "Report" column from the Spell Check table too (already done for Interpunction Check in 0.21.0) — it duplicated the "View Report" link already in the Actions column.

@@ -248,13 +248,18 @@ class Splecheh_InterpunctionBackend {
 
 	/**
 	 * Pulls a "--model <name>" value out of a Commandline Command string (as used
-	 * by tools/llm-wrapper.php's --model flag); falls back to the command string
-	 * itself when there's no such flag, so e.g. a plain "claude -p" command still
-	 * shows something meaningful instead of nothing.
+	 * by tools/llm-wrapper.php's --model flag). Without one, a command that's
+	 * clearly tools/llm-wrapper.php is using its default "claude" provider, so
+	 * that's a cleaner label than the full path/flags; anything else falls back
+	 * to the command string itself (e.g. a plain "claude -p"), so it still shows
+	 * something meaningful instead of nothing.
 	 */
 	public static function extract_model_label( string $command ): string {
 		if ( preg_match( '/--model[= ]+(\S+)/', $command, $matches ) ) {
 			return $matches[1];
+		}
+		if ( strpos( $command, 'llm-wrapper.php' ) !== false ) {
+			return 'claude';
 		}
 		return trim( $command );
 	}
