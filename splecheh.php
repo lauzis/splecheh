@@ -99,12 +99,14 @@ add_action( 'wp_ajax_splecheh_details_rerun', 'splecheh_ajax_details_rerun' );
 add_action( 'wp_ajax_splecheh_fix_word', 'splecheh_ajax_fix_word' );
 add_action( 'wp_ajax_splecheh_ignore_in_post', 'splecheh_ajax_ignore_in_post' );
 add_action( 'wp_ajax_splecheh_ignore_always', 'splecheh_ajax_ignore_always' );
+add_action( 'wp_ajax_splecheh_mark_complete', 'splecheh_ajax_mark_complete' );
 add_action( 'wp_ajax_splecheh_interpunction_run', 'splecheh_ajax_interpunction_run' );
 add_action( 'wp_ajax_splecheh_interpunction_bulk_run', 'splecheh_ajax_interpunction_bulk_run' );
 add_action( 'wp_ajax_splecheh_interpunction_details_rerun', 'splecheh_ajax_interpunction_details_rerun' );
 add_action( 'wp_ajax_splecheh_interpunction_fix', 'splecheh_ajax_interpunction_fix' );
 add_action( 'wp_ajax_splecheh_interpunction_ignore_in_post', 'splecheh_ajax_interpunction_ignore_in_post' );
 add_action( 'wp_ajax_splecheh_interpunction_ignore_always', 'splecheh_ajax_interpunction_ignore_always' );
+add_action( 'wp_ajax_splecheh_interpunction_mark_complete', 'splecheh_ajax_interpunction_mark_complete' );
 add_action( 'wp_ajax_splecheh_interpunction_test', 'splecheh_ajax_interpunction_test' );
 add_action( 'wp_ajax_splecheh_interpunction_test_search_posts', 'splecheh_ajax_interpunction_test_search_posts' );
 add_action( 'carbon_fields_theme_options_container_saved', 'splecheh_sync_bg_cron' );
@@ -641,6 +643,7 @@ function splecheh_enqueue_details_assets(): void {
 				'fix'            => __( 'Fix', 'splecheh' ),
 				'ignoreInPost'   => __( 'Ignore in post', 'splecheh' ),
 				'ignoreAlways'   => __( 'Ignore always', 'splecheh' ),
+				'markedComplete' => __( 'Marked as complete — all remaining issues resolved.', 'splecheh' ),
 			],
 		]
 	);
@@ -743,6 +746,7 @@ function splecheh_enqueue_interpunction_details_assets(): void {
 				'fix'           => __( 'Fix', 'splecheh' ),
 				'ignoreInPost'  => __( 'Ignore in post', 'splecheh' ),
 				'ignoreAlways'  => __( 'Ignore always', 'splecheh' ),
+				'markedComplete' => __( 'Marked as complete — all remaining issues resolved.', 'splecheh' ),
 			],
 		]
 	);
@@ -1099,6 +1103,28 @@ function splecheh_ajax_ignore_always(): void {
 		[
 			'ignored'          => $count,
 			'unresolved_count' => Splecheh_SpellCheckReport::count_unresolved( $post_id ),
+		]
+	);
+}
+
+function splecheh_ajax_mark_complete(): void {
+	check_ajax_referer( 'splecheh_details', 'nonce' );
+
+	$post_id = isset( $_POST['post_id'] ) ? absint( $_POST['post_id'] ) : 0;
+	if ( ! $post_id || ! current_user_can( 'edit_post', $post_id ) ) {
+		wp_send_json_error( __( 'Insufficient permissions.', 'splecheh' ), 403 );
+	}
+
+	$report = Splecheh_SpellCheckReport::mark_complete( $post_id );
+	if ( is_wp_error( $report ) ) {
+		wp_send_json_error( [ 'message' => $report->get_error_message() ] );
+	}
+
+	Splecheh_Logs::addLog( 'spellcheck', "Marked spell check complete for post {$post_id}", [] );
+
+	wp_send_json_success(
+		[
+			'errors' => Splecheh_SpellCheckReport::format_errors_for_details( $report['errors'] ),
 		]
 	);
 }
@@ -1508,6 +1534,28 @@ function splecheh_ajax_interpunction_ignore_always(): void {
 		[
 			'ignored'          => $count,
 			'unresolved_count' => Splecheh_InterpunctionReport::count_unresolved( $post_id ),
+		]
+	);
+}
+
+function splecheh_ajax_interpunction_mark_complete(): void {
+	check_ajax_referer( 'splecheh_interpunction_details', 'nonce' );
+
+	$post_id = isset( $_POST['post_id'] ) ? absint( $_POST['post_id'] ) : 0;
+	if ( ! $post_id || ! current_user_can( 'edit_post', $post_id ) || ! splecheh_interpunction_enabled() ) {
+		wp_send_json_error( __( 'Insufficient permissions.', 'splecheh' ), 403 );
+	}
+
+	$report = Splecheh_InterpunctionReport::mark_complete( $post_id );
+	if ( is_wp_error( $report ) ) {
+		wp_send_json_error( [ 'message' => $report->get_error_message() ] );
+	}
+
+	Splecheh_Logs::addLog( 'interpunction', "Marked interpunction check complete for post {$post_id}", [] );
+
+	wp_send_json_success(
+		[
+			'issues' => Splecheh_InterpunctionReport::format_issues_for_details( $report['issues'] ),
 		]
 	);
 }

@@ -157,6 +157,34 @@
 			});
 		}
 
+		// Mark Complete: resolves every remaining issue and marks the post as checked.
+		var markCompleteBtn = document.getElementById('splecheh-interpunction-mark-complete');
+		if (markCompleteBtn) {
+			markCompleteBtn.addEventListener('click', function () {
+				var spinner = document.getElementById('splecheh-interpunction-mark-complete-spinner');
+				markCompleteBtn.disabled = true;
+				if (spinner) spinner.style.display = 'inline-block';
+
+				post('splecheh_interpunction_mark_complete', {}).then(function (data) {
+					markCompleteBtn.disabled = false;
+					if (spinner) spinner.style.display = 'none';
+
+					if (!data.success) {
+						var errData = data.data || {};
+						showMessage('error', (typeof errData === 'string' ? errData : errData.message) || splechehInterpunctionDetails.i18n.requestFailed);
+						return;
+					}
+
+					renderIssues(data.data.issues);
+					showMessage('success', splechehInterpunctionDetails.i18n.markedComplete);
+				}).catch(function () {
+					markCompleteBtn.disabled = false;
+					if (spinner) spinner.style.display = 'none';
+					showMessage('error', splechehInterpunctionDetails.i18n.requestFailed);
+				});
+			});
+		}
+
 		// Row-level actions.
 		table.addEventListener('click', function (e) {
 			var row = e.target.closest('tr');

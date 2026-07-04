@@ -36,7 +36,10 @@ $errors = $report['errors'] ?? [];
 		<p>
 			<button type="button" class="button button-primary" id="splecheh-rerun-check"><?php esc_html_e( 'Re-run Spell Check', 'splecheh' ); ?></button>
 			<span class="splecheh-spinner spinner" id="splecheh-rerun-spinner" style="display:none;float:none;margin:0 4px;vertical-align:middle;"></span>
+			<button type="button" class="button" id="splecheh-mark-complete"><?php esc_html_e( 'Mark Complete', 'splecheh' ); ?></button>
+			<span class="splecheh-spinner spinner" id="splecheh-mark-complete-spinner" style="display:none;float:none;margin:0 4px;vertical-align:middle;"></span>
 		</p>
+		<p class="description"><?php esc_html_e( '"Mark Complete" resolves all remaining issues below and marks this post as checked, without changing its content — use it once you\'ve reviewed the flagged words and decided none need fixing.', 'splecheh' ); ?></p>
 
 		<div class="tablenav top">
 			<div class="alignleft actions">

@@ -201,6 +201,38 @@ class Splecheh_InterpunctionReport {
 	}
 
 	/**
+	 * Manually marks a post's interpunction check as complete: resolves every
+	 * remaining issue in the saved report (so the unresolved issue count becomes 0)
+	 * and pushes checked_at an hour into the future, so the post reads as up to date
+	 * even if it's resaved again shortly after (e.g. later in the same editing
+	 * session) without immediately being flagged outdated again. Used when an editor
+	 * has reviewed a post and decided the remaining flagged sentences don't need
+	 * fixing, without having to dismiss each one individually.
+	 *
+	 * @return array|WP_Error Updated report on success, WP_Error if no report exists.
+	 */
+	public static function mark_complete( int $post_id ) {
+		$report = self::get_report( $post_id );
+		if ( ! $report ) {
+			return new WP_Error( 'no_report', __( 'No interpunction check report found for this post yet.', 'splecheh' ) );
+		}
+
+		foreach ( $report['issues'] as &$issue ) {
+			$issue['resolved'] = true;
+		}
+		unset( $issue );
+
+		if ( ! self::update_report( $post_id, $report ) ) {
+			return new WP_Error( 'write_failed', __( 'Could not update interpunction check report.', 'splecheh' ) );
+		}
+
+		update_post_meta( $post_id, '_splecheh_interpunction_checked_at', gmdate( 'Y-m-d H:i:s', strtotime( '+1 hour' ) ) );
+		update_post_meta( $post_id, '_splecheh_interpunction_version', SPLECHEH_VERSION );
+
+		return $report;
+	}
+
+	/**
 	 * Overwrites a post's saved report JSON in place (does not change the report's UUID or checked-at meta),
 	 * and refreshes the stored unresolved issue count meta to match.
 	 */
