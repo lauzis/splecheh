@@ -29,20 +29,29 @@ workers don't inherit your shell's `PATH`), set its absolute path via the
 env[SPLECHEH_CLAUDE_BIN] = /home/youruser/.local/bin/claude
 ```
 
-### Timeouts for real posts, not just test batches
+### Timeouts and chunking for real posts, not just test batches
 
 The Settings page "Test" button and `tools/benchmark.sh` only send 2-3 canned
-sentences, which is fast. A real post can have dozens of sentences, and
-Splecheh sends them to the CLI/model in a single batch — that can take
-several minutes, especially for `claude` on a long post or for any local
-model.
+sentences, which is fast. A real post can have dozens of sentences, and each
+one costs real generation time — measured on this project's dev machine, a
+real 5-sentence batch via `claude` took 150-200s (much slower than short
+canned test sentences), and a single call for a whole 50+ sentence post
+consistently exceeded even a 300s timeout. So Splecheh sends a post's
+sentences in **chunks** (`Splecheh_InterpunctionBackend::check()`, default 5
+sentences per call, filterable via `splecheh_interpunction_chunk_size`) —
+several calls per post instead of one, merging the results. Lower the chunk
+size further if individual calls still time out on your setup; raising it
+reduces the number of calls but makes each one riskier.
 
-Two timeouts must both be raised together, or the request gets killed before
-it finishes:
+Two timeouts must both be raised together to comfortably cover one chunk's
+call, or the request gets killed before it finishes:
 
-1. **`llm-wrapper.php`'s own timeout** — `SPLECHEH_CLAUDE_TIMEOUT` (default
-   55s) for the `claude` provider, `SPLECHEH_OLLAMA_TIMEOUT` (default 300s)
-   for the `ollama` provider. Set via the PHP-FPM pool config, e.g.:
+1. **`llm-wrapper.php`'s own timeout** — simplest is the `--timeout <seconds>`
+   flag on the Commandline Command itself (no server config needed), e.g.
+   `php .../tools/llm-wrapper.php --timeout 300`. Or set it via env var:
+   `SPLECHEH_CLAUDE_TIMEOUT` (default 55s) for the `claude` provider,
+   `SPLECHEH_OLLAMA_TIMEOUT` (default 300s) for the `ollama` provider —
+   `--timeout` wins if both are set. Env vars go in the PHP-FPM pool config:
 
    ```ini
    env[SPLECHEH_CLAUDE_TIMEOUT] = 300
@@ -59,7 +68,12 @@ it finishes:
 Keep `llm-wrapper.php`'s own timeout slightly **below** Splecheh's, so a
 genuinely stuck request surfaces a clear "exceeded the timeout" error from
 the wrapper itself instead of being killed by Splecheh first with a less
-specific message.
+specific message. Note the total time for a whole post is roughly
+`(sentences / chunk size) × time per chunk` — a 50-sentence post at 5 per
+chunk and ~150-200s per chunk can still take 25+ minutes end to end; that's
+an inherent cost of the model being slow per-sentence on CPU/CLI, not
+something chunking alone fixes — see "Option B" below for faster local
+models if that total time is a problem.
 
 ## Option B: Local model via Ollama
 

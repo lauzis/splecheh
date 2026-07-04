@@ -37,6 +37,17 @@ class Splecheh_InterpunctionBackend {
 	const DEFAULT_TEST_MAX_SENTENCES = 5;
 
 	/**
+	 * Default number of sentences sent per LLM call. A real post can have far more
+	 * sentences than the "Test" button's canned/limited sample, and per-sentence
+	 * generation time (especially for a CLI/local model) doesn't leave much headroom
+	 * for one giant single-call prompt within any reasonable timeout — so a post's
+	 * sentences are chunked and checked over several calls, merging the results.
+	 * Filterable via `splecheh_interpunction_chunk_size`; 0 or less disables chunking
+	 * (send everything in a single call, the old behavior).
+	 */
+	const DEFAULT_CHUNK_SIZE = 5;
+
+	/**
 	 * Builds the example payload used by the Settings page "Test Interpunction Check"
 	 * button: the currently configured language and prompt, plus either the canned test
 	 * sentences or, when $post_id is given and has content, that post's own sentences
@@ -95,6 +106,31 @@ class Splecheh_InterpunctionBackend {
 	 * @return array|WP_Error
 	 */
 	public static function check( array $sentences, string $language, ?string $command_override = null ) {
+		$chunk_size = (int) apply_filters( 'splecheh_interpunction_chunk_size', self::DEFAULT_CHUNK_SIZE );
+
+		if ( $chunk_size <= 0 || count( $sentences ) <= $chunk_size ) {
+			return self::check_batch( $sentences, $language, $command_override );
+		}
+
+		$results = [];
+		foreach ( array_chunk( $sentences, $chunk_size ) as $chunk ) {
+			$chunk_result = self::check_batch( $chunk, $language, $command_override );
+			if ( is_wp_error( $chunk_result ) ) {
+				return $chunk_result;
+			}
+			array_push( $results, ...$chunk_result );
+		}
+
+		return $results;
+	}
+
+	/**
+	 * Sends a single batch of sentences to the configured provider in one call.
+	 *
+	 * @param string[] $sentences
+	 * @return array|WP_Error
+	 */
+	private static function check_batch( array $sentences, string $language, ?string $command_override ) {
 		$prompt = str_replace( '{language}', $language, self::get_prompt() );
 
 		switch ( self::get_type() ) {
