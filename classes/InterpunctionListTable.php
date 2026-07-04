@@ -27,6 +27,7 @@ class Splecheh_InterpunctionListTable extends WP_List_Table {
 			'post_type'    => __( 'Post Type', 'splecheh' ),
 			'last_checked' => __( 'Last Checked', 'splecheh' ),
 			'status'       => __( 'Status', 'splecheh' ),
+			'spellcheck'   => __( 'Spell Check', 'splecheh' ),
 			'chunks'       => __( 'Chunks', 'splecheh' ),
 			'issues'       => __( 'Issues', 'splecheh' ),
 			'actions'      => __( 'Actions', 'splecheh' ),
@@ -188,6 +189,9 @@ class Splecheh_InterpunctionListTable extends WP_List_Table {
 			case 'status':
 				return $this->column_status( $item );
 
+			case 'spellcheck':
+				return $this->column_spellcheck( $item );
+
 			case 'chunks':
 				return $this->column_chunks( $item );
 
@@ -218,6 +222,40 @@ class Splecheh_InterpunctionListTable extends WP_List_Table {
 			return '<span class="splecheh-badge splecheh-badge--outdated">' . esc_html__( 'Outdated', 'splecheh' ) . '</span>';
 		}
 		return '<span class="splecheh-badge splecheh-badge--current">' . esc_html__( 'Up to date', 'splecheh' ) . '</span>';
+	}
+
+	/**
+	 * Shows whether the post's Spell Check is clean (up to date, zero unresolved
+	 * issues) — the precondition Interpunction Check requires by default (see the
+	 * "Require Spell Check First" setting). "Never checked" or a stale/unresolved
+	 * Spell Check both mean Interpunction Check won't run for this post yet.
+	 */
+	protected function column_spellcheck( WP_Post $item ): string {
+		$checked_at = get_post_meta( $item->ID, '_splecheh_checked_at', true );
+		if ( ! $checked_at ) {
+			return '<span class="splecheh-badge splecheh-badge--never">' . esc_html__( 'Never checked', 'splecheh' ) . '</span>';
+		}
+
+		if ( Splecheh_SpellCheckReport::is_clean( $item->ID ) ) {
+			return '<span class="splecheh-badge splecheh-badge--current">' . esc_html__( 'Clean', 'splecheh' ) . '</span>';
+		}
+
+		$issue_count = metadata_exists( 'post', $item->ID, '_splecheh_issue_count' )
+			? (int) get_post_meta( $item->ID, '_splecheh_issue_count', true )
+			: 0;
+
+		if ( $issue_count > 0 ) {
+			return '<span class="splecheh-badge splecheh-badge--outdated">' .
+				esc_html(
+					sprintf(
+						/* translators: %d: number of unresolved spelling issues */
+						_n( '%d issue', '%d issues', $issue_count, 'splecheh' ),
+						$issue_count
+					)
+				) . '</span>';
+		}
+
+		return '<span class="splecheh-badge splecheh-badge--outdated">' . esc_html__( 'Outdated', 'splecheh' ) . '</span>';
 	}
 
 	/**

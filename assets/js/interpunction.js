@@ -18,7 +18,7 @@
 					splechehInterpunctionCheck.i18n.upToDate + '</span>';
 			}
 
-			var chunksCell = row.querySelector('[data-colname="Chunks"]') || row.cells[5];
+			var chunksCell = row.querySelector('[data-colname="Chunks"]') || row.cells[6];
 			if (chunksCell) {
 				var total = result.chunks_total;
 				if (total === null || total === undefined || total <= 0) {
@@ -32,7 +32,7 @@
 				}
 			}
 
-			var actionsCell = row.querySelector('[data-colname="Actions"]') || row.cells[7];
+			var actionsCell = row.querySelector('[data-colname="Actions"]') || row.cells[8];
 			if (actionsCell && result.actions_html) {
 				actionsCell.innerHTML = result.actions_html;
 			}
