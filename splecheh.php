@@ -1304,6 +1304,8 @@ function splecheh_ajax_interpunction_test(): void {
 
 	Splecheh_Logs::addLog( 'interpunction', 'Interpunction test started', [] );
 
+	$started_at = microtime( true );
+
 	try {
 		$result = Splecheh_InterpunctionBackend::check( $payload['sentences'], $payload['language'], $command_override !== '' ? $command_override : null );
 	} catch ( \Throwable $exception ) {
@@ -1316,22 +1318,26 @@ function splecheh_ajax_interpunction_test(): void {
 		);
 	}
 
+	$duration_seconds = round( microtime( true ) - $started_at, 2 );
+
 	if ( is_wp_error( $result ) ) {
 		Splecheh_Logs::addLog( 'interpunction', 'Interpunction test failed', [ 'error' => $result->get_error_message() ] );
 		wp_send_json_error(
 			[
-				'payload' => $payload,
-				'message' => $result->get_error_message(),
+				'payload'          => $payload,
+				'message'          => $result->get_error_message(),
+				'duration_seconds' => $duration_seconds,
 			]
 		);
 	}
 
-	Splecheh_Logs::addLog( 'interpunction', 'Interpunction test completed', [] );
+	Splecheh_Logs::addLog( 'interpunction', 'Interpunction test completed', [ 'duration_seconds' => $duration_seconds ] );
 
 	wp_send_json_success(
 		[
-			'payload' => $payload,
-			'result'  => Splecheh_InterpunctionReport::build_issues( $result ),
+			'payload'          => $payload,
+			'result'           => Splecheh_InterpunctionReport::build_issues( $result ),
+			'duration_seconds' => $duration_seconds,
 		]
 	);
 }

@@ -78,11 +78,15 @@
 						requestEl.textContent = JSON.stringify(errData.payload, null, 2);
 					}
 
+					var durationText = typeof errData.duration_seconds === 'number'
+						? ' (' + errData.duration_seconds + 's)'
+						: '';
+
 					if (data.success) {
 						if (resultEl) resultEl.textContent = JSON.stringify(errData.result, null, 2);
 						if (msg) {
 							msg.className = 'notice notice-success is-dismissible';
-							msg.querySelector('p').textContent = 'Test succeeded.';
+							msg.querySelector('p').textContent = 'Test succeeded.' + durationText;
 							msg.style.display = 'block';
 						}
 					} else {
@@ -90,7 +94,7 @@
 						if (msg) {
 							msg.className = 'notice notice-error is-dismissible';
 							msg.querySelector('p').textContent =
-								errData.message || splechehInterpunctionTest.i18n.requestFailed;
+								(errData.message || splechehInterpunctionTest.i18n.requestFailed) + durationText;
 							msg.style.display = 'block';
 						}
 					}

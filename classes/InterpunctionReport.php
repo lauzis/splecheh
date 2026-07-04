@@ -30,10 +30,12 @@ class Splecheh_InterpunctionReport {
 		$chunks_total = Splecheh_InterpunctionBackend::count_chunks( count( $sentences ) );
 
 		if ( empty( $sentences ) ) {
-			return self::finish_run( $post_id, $post, $language, [], 0, $chunks_total );
+			return self::finish_run( $post_id, $post, $language, [], 0, $chunks_total, 0.0 );
 		}
 
-		$results = Splecheh_InterpunctionBackend::check( $sentences, $language );
+		$started_at = microtime( true );
+		$results    = Splecheh_InterpunctionBackend::check( $sentences, $language );
+		$duration   = microtime( true ) - $started_at;
 
 		if ( is_wp_error( $results ) ) {
 			$partial = self::extract_partial_progress( $results );
@@ -41,7 +43,7 @@ class Splecheh_InterpunctionReport {
 				return $results; // Nothing succeeded (or not chunked) — nothing to save.
 			}
 
-			$save_result = self::finish_run( $post_id, $post, $language, $partial['results'], $partial['chunks_processed'], $chunks_total );
+			$save_result = self::finish_run( $post_id, $post, $language, $partial['results'], $partial['chunks_processed'], $chunks_total, $duration );
 			if ( is_wp_error( $save_result ) ) {
 				return $save_result;
 			}
@@ -49,7 +51,7 @@ class Splecheh_InterpunctionReport {
 			return $results; // Report saved (partial), but the check still didn't complete.
 		}
 
-		return self::finish_run( $post_id, $post, $language, $results, $chunks_total, $chunks_total );
+		return self::finish_run( $post_id, $post, $language, $results, $chunks_total, $chunks_total, $duration );
 	}
 
 	/**
@@ -76,7 +78,7 @@ class Splecheh_InterpunctionReport {
 	 * @param array[] $results
 	 * @return array|WP_Error
 	 */
-	private static function finish_run( int $post_id, WP_Post $post, string $language, array $results, int $chunks_processed, int $chunks_total ) {
+	private static function finish_run( int $post_id, WP_Post $post, string $language, array $results, int $chunks_processed, int $chunks_total, float $duration_seconds = 0.0 ) {
 		$issues = self::filter_ignored_sentences( $post_id, self::build_issues( $results ), $language );
 
 		$report = [
@@ -88,6 +90,7 @@ class Splecheh_InterpunctionReport {
 			'model'            => Splecheh_InterpunctionBackend::get_model_label(),
 			'chunks_processed' => $chunks_processed,
 			'chunks_total'     => $chunks_total,
+			'duration_seconds' => round( $duration_seconds, 2 ),
 			'issues'           => $issues,
 		];
 
