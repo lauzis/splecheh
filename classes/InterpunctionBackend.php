@@ -106,7 +106,7 @@ class Splecheh_InterpunctionBackend {
 	 * @return array|WP_Error
 	 */
 	public static function check( array $sentences, string $language, ?string $command_override = null ) {
-		$chunk_size = (int) apply_filters( 'splecheh_interpunction_chunk_size', self::DEFAULT_CHUNK_SIZE );
+		$chunk_size = (int) apply_filters( 'splecheh_interpunction_chunk_size', self::get_chunk_size() );
 
 		if ( $chunk_size <= 0 || count( $sentences ) <= $chunk_size ) {
 			return self::check_batch( $sentences, $language, $command_override );
@@ -152,6 +152,19 @@ class Splecheh_InterpunctionBackend {
 		}
 		$type = (string) carbon_get_theme_option( 'splecheh_interpunction_type' );
 		return $type !== '' ? $type : 'commandline';
+	}
+
+	/**
+	 * How many sentences are sent per LLM call — see DEFAULT_CHUNK_SIZE for why.
+	 * Also filterable via `splecheh_interpunction_chunk_size`, which takes
+	 * precedence over this Settings field.
+	 */
+	public static function get_chunk_size(): int {
+		if ( ! function_exists( 'carbon_get_theme_option' ) ) {
+			return self::DEFAULT_CHUNK_SIZE;
+		}
+		$value = carbon_get_theme_option( 'splecheh_interpunction_chunk_size' );
+		return $value !== '' && $value !== null ? (int) $value : self::DEFAULT_CHUNK_SIZE;
 	}
 
 	public static function get_prompt(): string {

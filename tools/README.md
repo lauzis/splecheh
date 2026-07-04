@@ -37,11 +37,13 @@ one costs real generation time — measured on this project's dev machine, a
 real 5-sentence batch via `claude` took 150-200s (much slower than short
 canned test sentences), and a single call for a whole 50+ sentence post
 consistently exceeded even a 300s timeout. So Splecheh sends a post's
-sentences in **chunks** (`Splecheh_InterpunctionBackend::check()`, default 5
-sentences per call, filterable via `splecheh_interpunction_chunk_size`) —
-several calls per post instead of one, merging the results. Lower the chunk
-size further if individual calls still time out on your setup; raising it
-reduces the number of calls but makes each one riskier.
+sentences in **chunks** (`Splecheh_InterpunctionBackend::check()`) — several
+calls per post instead of one, merging the results. Set the chunk size via
+Settings > Interpunction Check > **Sentence Chunk Size** (default 5, 0
+disables chunking), or the `splecheh_interpunction_chunk_size` filter, which
+takes precedence over the Settings field. Lower it further if individual
+calls still time out on your setup; raising it reduces the number of calls
+but makes each one riskier.
 
 Two timeouts must both be raised together to comfortably cover one chunk's
 call, or the request gets killed before it finishes:

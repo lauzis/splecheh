@@ -348,6 +348,10 @@ function splecheh_register_settings_fields(): void {
 					->set_default_value( Splecheh_InterpunctionReport::DEFAULT_PROMPT )
 					->set_help_text( __( 'Instruction sent to the LLM. Use {language} as a placeholder for the post\'s language. Must tell the LLM to output only a JSON array of {original, fixed, explanation} objects, one per input sentence and in the same order — see the default value for the expected wording.', 'splecheh' ) ),
 
+				\Carbon_Fields\Field::make( 'text', 'splecheh_interpunction_chunk_size', __( 'Sentence Chunk Size', 'splecheh' ) )
+					->set_default_value( (string) Splecheh_InterpunctionBackend::DEFAULT_CHUNK_SIZE )
+					->set_help_text( __( 'A post\'s sentences are sent to the provider this many at a time per call, not all at once — a real post can have far more sentences than a quick test, and a single call for dozens of sentences can take too long to finish before it times out (especially for a local model or a long post). Lower this if calls still time out; raise it to use fewer, larger calls if your provider handles it comfortably. Set to 0 to disable chunking (send everything in one call). Default: 5.', 'splecheh' ) ),
+
 				\Carbon_Fields\Field::make( 'separator', 'splecheh_interpunction_bg_separator', __( 'Background Interpunction Check', 'splecheh' ) ),
 
 				\Carbon_Fields\Field::make( 'checkbox', 'splecheh_interpunction_bg_enabled', __( 'Enable Background Interpunction Check', 'splecheh' ) )
