@@ -4,7 +4,7 @@
 
 	document.addEventListener('DOMContentLoaded', function () {
 
-		// Updates a row's Last Checked/Status/Report/Actions cells after a successful run.
+		// Updates a row's Last Checked/Status/Actions cells after a successful run.
 		// Shared by the per-row button and the bulk "Re-run Spell Check" action.
 		function applyRunResult(row, result) {
 			var checkedCell = row.querySelector('[data-colname="Last Checked"]') || row.cells[3];
@@ -16,13 +16,7 @@
 					splechehCheck.i18n.upToDate + '</span>';
 			}
 
-			var reportCell = row.querySelector('[data-colname="Report"]') || row.cells[5];
-			if (reportCell && result.report_url) {
-				reportCell.innerHTML = '<a href="' + result.report_url +
-					'" target="_blank" rel="noopener">' + splechehCheck.i18n.viewReport + '</a>';
-			}
-
-			var actionsCell = row.querySelector('[data-colname="Actions"]') || row.cells[7];
+			var actionsCell = row.querySelector('[data-colname="Actions"]') || row.cells[6];
 			if (actionsCell && result.actions_html) {
 				actionsCell.innerHTML = result.actions_html;
 			}
