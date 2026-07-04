@@ -9,6 +9,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 	<h2><?php esc_html_e( 'Table of Contents', 'splecheh' ); ?></h2>
 	<ul style="list-style:disc;padding-left:1.5em;">
+		<li><a href="#spell-check-vs-interpunction-check"><?php esc_html_e( 'Spell Check vs Interpunction Check', 'splecheh' ); ?></a></li>
 		<li>
 			<a href="#interpunction-check"><?php esc_html_e( 'Interpunction Check', 'splecheh' ); ?></a>
 			<ul style="list-style:circle;padding-left:1.5em;">
@@ -26,6 +27,16 @@ if ( ! defined( 'ABSPATH' ) ) {
 		</li>
 	</ul>
 
+	<h2 id="spell-check-vs-interpunction-check"><?php esc_html_e( 'Spell Check vs Interpunction Check', 'splecheh' ); ?></h2>
+
+	<p>
+		<?php esc_html_e( 'Spell Check is done purely in code — Aspell, a local dictionary lookup — so it is effectively free: no API calls, no LLM, negligible compute per post. Interpunction Check calls an LLM (a local model or a paid API) for every batch of sentences, which is comparatively slow and, for paid providers, has a real cost per request.', 'splecheh' ); ?>
+	</p>
+
+	<p>
+		<?php esc_html_e( 'This is why Interpunction Check has a "Require Spell Check First" setting, on by default: since Spell Check is basically free to run, it makes sense to make sure a post\'s spelling is already clean before spending the much more expensive Interpunction Check on it.', 'splecheh' ); ?>
+	</p>
+
 	<h2 id="interpunction-check"><?php esc_html_e( 'Interpunction Check', 'splecheh' ); ?></h2>
 
 	<p>
@@ -35,6 +46,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	<p><?php esc_html_e( 'Settings:', 'splecheh' ); ?></p>
 	<ul style="list-style:disc;padding-left:1.5em;">
 		<li><?php esc_html_e( 'Enable Interpunction Check — shows the "Interpunction Check" page in the menu.', 'splecheh' ); ?></li>
+		<li><?php esc_html_e( 'Require Spell Check First — on by default; skips a post for Interpunction Check until its Spell Check is up to date with zero unresolved issues.', 'splecheh' ); ?></li>
 		<li><?php esc_html_e( 'Type — how the request is made: Commandline (local model/script), OpenAI, Claude, or Gemini.', 'splecheh' ); ?></li>
 		<li><?php esc_html_e( 'Commandline Command — shown only for the Commandline type.', 'splecheh' ); ?></li>
 		<li><?php esc_html_e( 'Endpoint — optional override of the default API URL; shown only for OpenAI/Claude/Gemini.', 'splecheh' ); ?></li>

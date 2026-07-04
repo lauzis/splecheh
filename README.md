@@ -78,6 +78,7 @@ Run `composer install` to pull in dev dependencies (PHPUnit), then `composer tes
 
 ### --- 0.22.0 ---
 - Added a "Require Spell Check First" Interpunction Check setting (enabled by default): a post is skipped for Interpunction Check — Run Now, bulk runs, and the background check — until its Spell Check is up to date with zero unresolved issues, so punctuation/capitalization isn't "fixed" on text that still has known spelling errors. Backed by `Splecheh_SpellCheckReport::is_clean()`. The background check's post-selection query filters these posts out at the SQL level (not just inside the check itself) — with the default batch size of 1, filtering only after selection would let the cron get stuck retrying the same ineligible post forever instead of moving on. The Settings page "Test" button is unaffected. Verified live: blocked instantly (no LLM call) for a post with unresolved spelling issues, proceeded normally for a clean one.
+- Added a "Spell Check vs Interpunction Check" section to the Help page explaining why the above setting defaults to on: Spell Check runs purely in code (Aspell, a local dictionary lookup) so it's effectively free, while Interpunction Check calls an LLM per batch of sentences — comparatively slow and, for paid providers, a real cost per request.
 
 ### --- 0.21.1 ---
 - Removed the "Report" column from the Spell Check table too (already done for Interpunction Check in 0.21.0) — it duplicated the "View Report" link already in the Actions column.
