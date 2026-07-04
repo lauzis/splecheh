@@ -715,6 +715,13 @@ function splecheh_enqueue_settings_assets(): void {
 
 	wp_enqueue_style( 'wp-jquery-ui-dialog' );
 
+	wp_enqueue_style(
+		'splecheh-settings',
+		plugins_url( 'assets/css/settings.css', SPLECHEH_PLUGIN_FILE ),
+		[],
+		SPLECHEH_VERSION
+	);
+
 	wp_enqueue_script(
 		'splecheh-interpunction-test',
 		plugins_url( 'assets/js/interpunction-test.js', SPLECHEH_PLUGIN_FILE ),
