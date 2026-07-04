@@ -158,6 +158,15 @@ function splecheh_register_menu(): void {
 		'splecheh_page_help'
 	);
 
+	add_submenu_page(
+		'splecheh',
+		__( 'Ignore List', 'splecheh' ),
+		__( 'Ignore List', 'splecheh' ),
+		'edit_posts',
+		'splecheh-ignore-list',
+		'splecheh_page_ignore_list'
+	);
+
 	if ( splecheh_logs_enabled() ) {
 		add_submenu_page(
 			'splecheh',
@@ -168,15 +177,6 @@ function splecheh_register_menu(): void {
 			'splecheh_page_logs'
 		);
 	}
-
-	add_submenu_page(
-		'splecheh',
-		__( 'Ignore List', 'splecheh' ),
-		__( 'Ignore List', 'splecheh' ),
-		'edit_posts',
-		'splecheh-ignore-list',
-		'splecheh_page_ignore_list'
-	);
 
 	// Hidden page (not shown in the menu): per-post spell check details, opened in a new tab from the Spell Check table.
 	add_submenu_page(

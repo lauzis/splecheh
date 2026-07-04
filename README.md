@@ -81,6 +81,7 @@ Run `composer install` to pull in dev dependencies (PHPUnit), then `composer tes
 - Added a "Spell Check vs Interpunction Check" section to the Help page explaining why the above setting defaults to on: Spell Check runs purely in code (Aspell, a local dictionary lookup) so it's effectively free, while Interpunction Check calls an LLM per batch of sentences — comparatively slow and, for paid providers, a real cost per request.
 - Moved the Settings page's "Logs" tab to the end (after Background Interpunction Check) — it's the least frequently visited section.
 - The Settings page's active tab title is now bold, so it's clearer at a glance which section is showing.
+- Moved "Logs" to right before "Settings" in the Splecheh admin sidebar submenu (was between Help and Ignore List): Spell Check, Interpunction Check, Help, Ignore List, Logs, Settings.
 
 ### --- 0.21.1 ---
 - Removed the "Report" column from the Spell Check table too (already done for Interpunction Check in 0.21.0) — it duplicated the "View Report" link already in the Actions column.
