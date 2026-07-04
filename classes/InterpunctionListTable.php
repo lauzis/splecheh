@@ -29,7 +29,6 @@ class Splecheh_InterpunctionListTable extends WP_List_Table {
 			'status'       => __( 'Status', 'splecheh' ),
 			'chunks'       => __( 'Chunks', 'splecheh' ),
 			'issues'       => __( 'Issues', 'splecheh' ),
-			'report'       => __( 'Report', 'splecheh' ),
 			'actions'      => __( 'Actions', 'splecheh' ),
 		];
 	}
@@ -195,9 +194,6 @@ class Splecheh_InterpunctionListTable extends WP_List_Table {
 			case 'issues':
 				return $this->column_issues( $item );
 
-			case 'report':
-				return $this->column_report( $item );
-
 			case 'actions':
 				return $this->column_actions( $item );
 		}
@@ -263,14 +259,6 @@ class Splecheh_InterpunctionListTable extends WP_List_Table {
 			return '&mdash;';
 		}
 		return esc_html( (string) get_post_meta( $item->ID, '_splecheh_interpunction_issue_count', true ) );
-	}
-
-	protected function column_report( WP_Post $item ): string {
-		$url = Splecheh_InterpunctionReport::get_report_url( $item->ID );
-		if ( ! $url ) {
-			return '&mdash;';
-		}
-		return '<a href="' . esc_url( $url ) . '" target="_blank" rel="noopener">' . esc_html__( 'View Report', 'splecheh' ) . '</a>';
 	}
 
 	protected function column_actions( WP_Post $item ): string {

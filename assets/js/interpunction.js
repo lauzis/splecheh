@@ -4,7 +4,7 @@
 
 	document.addEventListener('DOMContentLoaded', function () {
 
-		// Updates a row's Last Checked/Status/Chunks/Report/Actions cells after a run —
+		// Updates a row's Last Checked/Status/Chunks/Actions cells after a run —
 		// including a partial (chunk failed partway through) save, not just a full
 		// success, since InterpunctionReport::run() may still have saved a report.
 		// Shared by the per-row button and the bulk "Re-run Interpunction Check" action.
@@ -32,13 +32,7 @@
 				}
 			}
 
-			var reportCell = row.querySelector('[data-colname="Report"]') || row.cells[6];
-			if (reportCell && result.report_url) {
-				reportCell.innerHTML = '<a href="' + result.report_url +
-					'" target="_blank" rel="noopener">' + splechehInterpunctionCheck.i18n.viewReport + '</a>';
-			}
-
-			var actionsCell = row.querySelector('[data-colname="Actions"]') || row.cells[8];
+			var actionsCell = row.querySelector('[data-colname="Actions"]') || row.cells[7];
 			if (actionsCell && result.actions_html) {
 				actionsCell.innerHTML = result.actions_html;
 			}

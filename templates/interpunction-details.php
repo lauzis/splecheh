@@ -39,7 +39,14 @@ $issues = $report['issues'] ?? [];
 				esc_html__( 'Checked with: %s', 'splecheh' ),
 				'<code>' . esc_html( $report['model'] ) . '</code>'
 			);
-			if ( isset( $report['duration_seconds'] ) ) {
+			if ( isset( $report['duration_seconds'] ) && isset( $report['sentence_count'] ) ) {
+				printf(
+					/* translators: 1: elapsed seconds, e.g. "12.3", 2: number of sentences checked */
+					esc_html__( ' (took %1$ss for %2$d sentence(s))', 'splecheh' ),
+					esc_html( (string) $report['duration_seconds'] ),
+					(int) $report['sentence_count']
+				);
+			} elseif ( isset( $report['duration_seconds'] ) ) {
 				printf(
 					/* translators: %s: elapsed seconds, e.g. "12.3" */
 					esc_html__( ' (took %ss)', 'splecheh' ),

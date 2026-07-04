@@ -25,12 +25,13 @@ class Splecheh_InterpunctionReport {
 
 		$language = splecheh_get_language_code( $post_id );
 
-		$plain_text   = Splecheh_SpellCheckReport::prepare_text( $post->post_content, splecheh_ignore_shortcodes_enabled() );
-		$sentences    = self::split_into_sentences( $plain_text );
-		$chunks_total = Splecheh_InterpunctionBackend::count_chunks( count( $sentences ) );
+		$plain_text     = Splecheh_SpellCheckReport::prepare_text( $post->post_content, splecheh_ignore_shortcodes_enabled() );
+		$sentences      = self::split_into_sentences( $plain_text );
+		$sentence_count = count( $sentences );
+		$chunks_total   = Splecheh_InterpunctionBackend::count_chunks( $sentence_count );
 
 		if ( empty( $sentences ) ) {
-			return self::finish_run( $post_id, $post, $language, [], 0, $chunks_total, 0.0 );
+			return self::finish_run( $post_id, $post, $language, [], 0, $chunks_total, 0.0, $sentence_count );
 		}
 
 		$started_at = microtime( true );
@@ -43,7 +44,7 @@ class Splecheh_InterpunctionReport {
 				return $results; // Nothing succeeded (or not chunked) — nothing to save.
 			}
 
-			$save_result = self::finish_run( $post_id, $post, $language, $partial['results'], $partial['chunks_processed'], $chunks_total, $duration );
+			$save_result = self::finish_run( $post_id, $post, $language, $partial['results'], $partial['chunks_processed'], $chunks_total, $duration, $sentence_count );
 			if ( is_wp_error( $save_result ) ) {
 				return $save_result;
 			}
@@ -51,7 +52,7 @@ class Splecheh_InterpunctionReport {
 			return $results; // Report saved (partial), but the check still didn't complete.
 		}
 
-		return self::finish_run( $post_id, $post, $language, $results, $chunks_total, $chunks_total, $duration );
+		return self::finish_run( $post_id, $post, $language, $results, $chunks_total, $chunks_total, $duration, $sentence_count );
 	}
 
 	/**
@@ -78,7 +79,7 @@ class Splecheh_InterpunctionReport {
 	 * @param array[] $results
 	 * @return array|WP_Error
 	 */
-	private static function finish_run( int $post_id, WP_Post $post, string $language, array $results, int $chunks_processed, int $chunks_total, float $duration_seconds = 0.0 ) {
+	private static function finish_run( int $post_id, WP_Post $post, string $language, array $results, int $chunks_processed, int $chunks_total, float $duration_seconds = 0.0, int $sentence_count = 0 ) {
 		$issues = self::filter_ignored_sentences( $post_id, self::build_issues( $results ), $language );
 
 		$report = [
@@ -88,6 +89,7 @@ class Splecheh_InterpunctionReport {
 			'language'         => $language,
 			'provider'         => Splecheh_InterpunctionBackend::get_type(),
 			'model'            => Splecheh_InterpunctionBackend::get_model_label(),
+			'sentence_count'   => $sentence_count,
 			'chunks_processed' => $chunks_processed,
 			'chunks_total'     => $chunks_total,
 			'duration_seconds' => round( $duration_seconds, 2 ),
