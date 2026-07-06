@@ -449,18 +449,21 @@ class Splecheh_SpellCheckReport {
 	 * Finds the first sentence in $text that contains $word and returns it.
 	 */
 	private static function extract_sentence( string $text, string $word ): string {
+		$pattern = '/\b' . preg_quote( $word, '/' ) . '\b/ui';
+
 		// Split into sentences on typical sentence-ending punctuation.
 		$sentences = preg_split( '/(?<=[.!?])\s+/u', $text ) ?: [];
 		foreach ( $sentences as $sentence ) {
-			if ( mb_stripos( $sentence, $word ) !== false ) {
+			if ( preg_match( $pattern, $sentence ) === 1 ) {
 				return trim( $sentence );
 			}
 		}
 		// Fallback: return a short excerpt around the word.
-		$pos = mb_stripos( $text, $word );
-		if ( $pos === false ) {
+		if ( preg_match( $pattern, $text, $matches, PREG_OFFSET_CAPTURE ) !== 1 ) {
 			return '';
 		}
+		// PREG_OFFSET_CAPTURE gives a byte offset; convert to a character offset for mb_substr().
+		$pos   = mb_strlen( substr( $text, 0, $matches[0][1] ) );
 		$start = max( 0, $pos - 50 );
 		return trim( mb_substr( $text, $start, 100 ) );
 	}
