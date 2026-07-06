@@ -342,6 +342,63 @@ class Splecheh_SpellCheckReport {
 	}
 
 	/**
+	 * HTML-escapes $suggestion and wraps the part that differs from $word in <strong>,
+	 * keeping any shared prefix/suffix plain. A lightweight diff for short, single-word
+	 * spelling suggestions — not a general-purpose text diff.
+	 */
+	public static function diff_highlight( string $word, string $suggestion ): string {
+		$word_len       = mb_strlen( $word );
+		$suggestion_len = mb_strlen( $suggestion );
+
+		$max_prefix = min( $word_len, $suggestion_len );
+		$prefix_len = 0;
+		while ( $prefix_len < $max_prefix && mb_substr( $word, $prefix_len, 1 ) === mb_substr( $suggestion, $prefix_len, 1 ) ) {
+			++$prefix_len;
+		}
+
+		$max_suffix = min( $word_len, $suggestion_len ) - $prefix_len;
+		$suffix_len = 0;
+		while (
+			$suffix_len < $max_suffix
+			&& mb_substr( $word, $word_len - $suffix_len - 1, 1 ) === mb_substr( $suggestion, $suggestion_len - $suffix_len - 1, 1 )
+		) {
+			++$suffix_len;
+		}
+
+		$prefix = mb_substr( $suggestion, 0, $prefix_len );
+		$middle = mb_substr( $suggestion, $prefix_len, $suggestion_len - $prefix_len - $suffix_len );
+		$suffix = mb_substr( $suggestion, $suggestion_len - $suffix_len );
+
+		if ( $middle === '' ) {
+			return esc_html( $suggestion );
+		}
+
+		return esc_html( $prefix ) . '<strong>' . esc_html( $middle ) . '</strong>' . esc_html( $suffix );
+	}
+
+	/**
+	 * Builds the read-only "Suggestion" column markup for one error: every suggestion for
+	 * $word, comma-separated, with the part that differs from $word in bold.
+	 *
+	 * @param string[] $suggestions
+	 */
+	public static function render_suggestions( array $suggestions, string $word ): string {
+		if ( empty( $suggestions ) ) {
+			return '';
+		}
+
+		return implode(
+			', ',
+			array_map(
+				static function ( string $suggestion ) use ( $word ): string {
+					return self::diff_highlight( $word, $suggestion );
+				},
+				$suggestions
+			)
+		);
+	}
+
+	/**
 	 * Maps a report's error entries into the shape the Details page's JS uses to
 	 * redraw the issues table in place (e.g. after an AJAX re-run), pre-escaping
 	 * and highlighting the excerpt the same way the server-rendered rows do.
@@ -353,10 +410,11 @@ class Splecheh_SpellCheckReport {
 		return array_map(
 			static function ( array $error ): array {
 				return [
-					'word'       => $error['word'],
-					'excerpt'    => self::highlight_word( $error['excerpt'], $error['word'] ),
-					'suggestion' => $error['suggestions'][0] ?? '',
-					'resolved'   => ! empty( $error['resolved'] ),
+					'word'            => $error['word'],
+					'excerpt'         => self::highlight_word( $error['excerpt'], $error['word'] ),
+					'suggestion'      => $error['suggestions'][0] ?? '',
+					'suggestionsHtml' => self::render_suggestions( $error['suggestions'] ?? [], $error['word'] ),
+					'resolved'        => ! empty( $error['resolved'] ),
 				];
 			},
 			$errors

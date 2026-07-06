@@ -110,6 +110,7 @@
 			return '<tr data-index="' + index + '"' + (error.resolved ? ' class="splecheh-resolved"' : '') + '>' +
 				'<th class="check-column"><input type="checkbox" class="splecheh-row-check"' + checkboxAttrs + '></th>' +
 				'<td>' + escapeHtml(error.word) + '</td>' +
+				'<td>' + error.suggestionsHtml + '</td>' +
 				'<td>' + error.excerpt + '</td>' +
 				'<td><input type="text" class="splecheh-replacement regular-text" value="' + escapeHtml(error.suggestion) + '"' + checkboxAttrs + '></td>' +
 				'<td>' + actionsCell + '</td>' +
@@ -121,7 +122,7 @@
 			if (!tbody) return;
 
 			if (errors.length === 0) {
-				tbody.innerHTML = '<tr><td colspan="5">' + splechehDetails.i18n.noIssues + '</td></tr>';
+				tbody.innerHTML = '<tr><td colspan="6">' + splechehDetails.i18n.noIssues + '</td></tr>';
 				return;
 			}
 

@@ -22,10 +22,11 @@ final class FormatErrorsForDetailsTest extends TestCase {
 		$this->assertSame(
 			[
 				[
-					'word'       => 'bolld',
-					'excerpt'    => 'This has a <strong>bolld</strong> typo in it.',
-					'suggestion' => 'bold',
-					'resolved'   => false,
+					'word'            => 'bolld',
+					'excerpt'         => 'This has a <strong>bolld</strong> typo in it.',
+					'suggestion'      => 'bold',
+					'suggestionsHtml' => 'bold, b<strong>a</strong>ld',
+					'resolved'        => false,
 				],
 			],
 			$result

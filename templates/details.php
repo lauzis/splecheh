@@ -61,6 +61,7 @@ $errors = $report['errors'] ?? [];
 						<input type="checkbox" id="splecheh-select-all">
 					</td>
 					<th><?php esc_html_e( 'Word', 'splecheh' ); ?></th>
+					<th><?php esc_html_e( 'Suggestion', 'splecheh' ); ?></th>
 					<th><?php esc_html_e( 'Sentence', 'splecheh' ); ?></th>
 					<th><?php esc_html_e( 'Replacement', 'splecheh' ); ?></th>
 					<th><?php esc_html_e( 'Actions', 'splecheh' ); ?></th>
@@ -68,7 +69,7 @@ $errors = $report['errors'] ?? [];
 			</thead>
 			<tbody>
 				<?php if ( empty( $errors ) ) : ?>
-				<tr><td colspan="5"><?php esc_html_e( 'No spelling issues found.', 'splecheh' ); ?></td></tr>
+				<tr><td colspan="6"><?php esc_html_e( 'No spelling issues found.', 'splecheh' ); ?></td></tr>
 				<?php endif; ?>
 				<?php foreach ( $errors as $index => $error ) :
 					$resolved   = ! empty( $error['resolved'] );
@@ -79,6 +80,7 @@ $errors = $report['errors'] ?? [];
 						<input type="checkbox" class="splecheh-row-check" <?php disabled( $resolved ); ?>>
 					</th>
 					<td><?php echo esc_html( $error['word'] ); ?></td>
+					<td><?php echo Splecheh_SpellCheckReport::render_suggestions( $error['suggestions'] ?? [], $error['word'] ); ?></td>
 					<td><?php echo Splecheh_SpellCheckReport::highlight_word( $error['excerpt'], $error['word'] ); ?></td>
 					<td>
 						<input type="text" class="splecheh-replacement regular-text" value="<?php echo esc_attr( $suggestion ); ?>" <?php disabled( $resolved ); ?>>
