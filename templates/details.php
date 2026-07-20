@@ -11,8 +11,14 @@ if ( ! $post ) {
 	wp_die( esc_html__( 'Post not found.', 'splecheh' ) );
 }
 
-$report = Splecheh_SpellCheckReport::get_report( $post_id );
-$errors = $report['errors'] ?? [];
+$report   = Splecheh_SpellCheckReport::get_report( $post_id );
+$errors   = $report['errors'] ?? [];
+$language = splecheh_get_language_code( $post_id );
+
+$fix_everywhere_label = $language !== ''
+	/* translators: %s: language code (e.g. "LV") */
+	? sprintf( __( 'Fix everywhere in %s', 'splecheh' ), strtoupper( $language ) )
+	: __( 'Fix everywhere', 'splecheh' );
 ?>
 <div class="wrap">
 	<h1>
@@ -47,6 +53,7 @@ $errors = $report['errors'] ?? [];
 				<select id="splecheh-bulk-action">
 					<option value=""><?php esc_html_e( 'Bulk actions', 'splecheh' ); ?></option>
 					<option value="fix"><?php esc_html_e( 'Fix', 'splecheh' ); ?></option>
+					<option value="fix_everywhere"><?php echo esc_html( $fix_everywhere_label ); ?></option>
 					<option value="ignore_in_post"><?php esc_html_e( 'Ignore in post', 'splecheh' ); ?></option>
 					<option value="ignore_always"><?php esc_html_e( 'Ignore always', 'splecheh' ); ?></option>
 				</select>
@@ -90,6 +97,7 @@ $errors = $report['errors'] ?? [];
 							<span class="splecheh-badge splecheh-badge--current"><?php esc_html_e( 'Resolved', 'splecheh' ); ?></span>
 						<?php else : ?>
 							<button class="button button-primary button-small splecheh-fix"><?php esc_html_e( 'Fix', 'splecheh' ); ?></button>
+							<button class="button button-small splecheh-fix-everywhere"><?php echo esc_html( $fix_everywhere_label ); ?></button>
 							<button class="button button-small splecheh-ignore-post"><?php esc_html_e( 'Ignore in post', 'splecheh' ); ?></button>
 							<button class="button button-small splecheh-ignore-always"><?php esc_html_e( 'Ignore always', 'splecheh' ); ?></button>
 						<?php endif; ?>

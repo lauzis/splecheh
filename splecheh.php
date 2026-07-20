@@ -3,7 +3,7 @@
  * Plugin Name: Splecheh - WordPress spellcheck plugin
  * Plugin URI:  https://github.com/lauzis/splecheh
  * Description: Run spell check on all articles and post types to find spelling errors.
- * Version:     0.22.1
+ * Version:     0.23.0
  * Author:      Aivars Lauzis
  * Text Domain: splecheh
  * License:     MIT
@@ -14,7 +14,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'SPLECHEH_VERSION', '0.22.1' );
+define( 'SPLECHEH_VERSION', '0.23.0' );
 define( 'SPLECHEH_DIR', plugin_dir_path( __FILE__ ) );
 define( 'SPLECHEH_LOG_PATH', SPLECHEH_DIR . 'logs' );
 define( 'SPLECHEH_PLUGIN_FILE', __FILE__ );
@@ -23,6 +23,7 @@ require_once SPLECHEH_DIR . 'classes/Logs.php';
 require_once SPLECHEH_DIR . 'classes/Notification.php';
 require_once SPLECHEH_DIR . 'classes/NotificationManager.php';
 require_once SPLECHEH_DIR . 'classes/IgnoreList.php';
+require_once SPLECHEH_DIR . 'classes/AutoApplyList.php';
 require_once SPLECHEH_DIR . 'classes/SpellCheckReport.php';
 require_once SPLECHEH_DIR . 'classes/SplechehCron.php';
 require_once SPLECHEH_DIR . 'classes/InterpunctionIgnoreList.php';
@@ -97,6 +98,7 @@ add_action( 'wp_ajax_splecheh_run_now', 'splecheh_ajax_run_now' );
 add_action( 'wp_ajax_splecheh_interpunction_run_now', 'splecheh_ajax_interpunction_run_now' );
 add_action( 'wp_ajax_splecheh_details_rerun', 'splecheh_ajax_details_rerun' );
 add_action( 'wp_ajax_splecheh_fix_word', 'splecheh_ajax_fix_word' );
+add_action( 'wp_ajax_splecheh_fix_everywhere', 'splecheh_ajax_fix_everywhere' );
 add_action( 'wp_ajax_splecheh_ignore_in_post', 'splecheh_ajax_ignore_in_post' );
 add_action( 'wp_ajax_splecheh_ignore_always', 'splecheh_ajax_ignore_always' );
 add_action( 'wp_ajax_splecheh_mark_complete', 'splecheh_ajax_mark_complete' );
@@ -165,6 +167,15 @@ function splecheh_register_menu(): void {
 		'edit_posts',
 		'splecheh-ignore-list',
 		'splecheh_page_ignore_list'
+	);
+
+	add_submenu_page(
+		'splecheh',
+		__( 'Auto-Apply List', 'splecheh' ),
+		__( 'Auto-Apply List', 'splecheh' ),
+		'edit_posts',
+		'splecheh-auto-apply-list',
+		'splecheh_page_auto_apply_list'
 	);
 
 	if ( splecheh_logs_enabled() ) {
@@ -552,6 +563,10 @@ function splecheh_page_ignore_list(): void {
 	require_once SPLECHEH_DIR . 'templates/ignore-list.php';
 }
 
+function splecheh_page_auto_apply_list(): void {
+	require_once SPLECHEH_DIR . 'templates/auto-apply-list.php';
+}
+
 function splecheh_page_interpunction_check(): void {
 	require_once SPLECHEH_DIR . 'templates/interpunction-check.php';
 }
@@ -639,6 +654,9 @@ function splecheh_enqueue_details_assets(): void {
 		return;
 	}
 
+	$post_id  = isset( $_GET['post_id'] ) ? absint( $_GET['post_id'] ) : 0;
+	$language = $post_id ? splecheh_get_language_code( $post_id ) : '';
+
 	wp_enqueue_script(
 		'splecheh-details',
 		plugins_url( 'assets/js/details.js', SPLECHEH_PLUGIN_FILE ),
@@ -650,10 +668,11 @@ function splecheh_enqueue_details_assets(): void {
 		'splecheh-details',
 		'splechehDetails',
 		[
-			'ajaxUrl' => admin_url( 'admin-ajax.php' ),
-			'nonce'   => wp_create_nonce( 'splecheh_details' ),
-			'postId'  => isset( $_GET['post_id'] ) ? absint( $_GET['post_id'] ) : 0,
-			'i18n'    => [
+			'ajaxUrl'  => admin_url( 'admin-ajax.php' ),
+			'nonce'    => wp_create_nonce( 'splecheh_details' ),
+			'postId'   => $post_id,
+			'language' => $language,
+			'i18n'     => [
 				'selectAction'   => __( 'Select a bulk action.', 'splecheh' ),
 				'selectRows'     => __( 'Select at least one issue.', 'splecheh' ),
 				'replacementReq' => __( 'Enter a replacement word before fixing.', 'splecheh' ),
@@ -668,6 +687,10 @@ function splecheh_enqueue_details_assets(): void {
 				'fix'            => __( 'Fix', 'splecheh' ),
 				'ignoreInPost'   => __( 'Ignore in post', 'splecheh' ),
 				'ignoreAlways'   => __( 'Ignore always', 'splecheh' ),
+				'fixEverywhere'  => $language !== ''
+					/* translators: %s: language code (e.g. "LV") */
+					? sprintf( __( 'Fix everywhere in %s', 'splecheh' ), strtoupper( $language ) )
+					: __( 'Fix everywhere', 'splecheh' ),
 				'markedComplete' => __( 'Marked as complete — all remaining issues resolved.', 'splecheh' ),
 			],
 		]
@@ -1053,6 +1076,73 @@ function splecheh_ajax_fix_word(): void {
 		);
 		Splecheh_SpellCheckReport::update_report( $post_id, $report );
 		Splecheh_Logs::addLog( 'spellcheck', "Fixed {$fixed} word(s) in post {$post_id}", [] );
+	}
+
+	wp_send_json_success(
+		[
+			'fixed'            => $fixed,
+			'unresolved_count' => Splecheh_SpellCheckReport::count_unresolved( $post_id ),
+		]
+	);
+}
+
+/**
+ * "Fix everywhere in {language}" — like the per-issue Fix, but also saves the
+ * word→replacement combo to the global, language-scoped auto-apply list so future
+ * spell checks on any post in that language correct the same word automatically.
+ * Also fixes every occurrence of the word in the current post right away.
+ */
+function splecheh_ajax_fix_everywhere(): void {
+	check_ajax_referer( 'splecheh_details', 'nonce' );
+
+	[ $post_id, $report ] = splecheh_get_details_request_context();
+
+	$items = isset( $_POST['items'] ) ? json_decode( wp_unslash( $_POST['items'] ), true ) : null;
+	if ( ! is_array( $items ) || empty( $items ) ) {
+		wp_send_json_error( __( 'Invalid request.', 'splecheh' ), 400 );
+	}
+
+	$post = get_post( $post_id );
+	if ( ! $post ) {
+		wp_send_json_error( __( 'Post not found.', 'splecheh' ), 404 );
+	}
+
+	$language = splecheh_get_language_code( $post_id );
+	$content  = $post->post_content;
+	$fixed    = 0;
+
+	foreach ( $items as $item ) {
+		$index       = isset( $item['index'] ) ? absint( $item['index'] ) : -1;
+		$replacement = isset( $item['replacement'] ) ? sanitize_text_field( wp_unslash( $item['replacement'] ) ) : '';
+
+		if ( $replacement === '' || ! isset( $report['errors'][ $index ] ) || ! empty( $report['errors'][ $index ]['resolved'] ) ) {
+			continue;
+		}
+
+		$error = $report['errors'][ $index ];
+
+		Splecheh_AutoApplyList::add_pair( $language, $error['word'], $replacement );
+		$content = Splecheh_SpellCheckReport::replace_all_occurrences( $content, $error['word'], $replacement );
+
+		$report['errors'][ $index ]['resolved'] = true;
+		$report['errors'][ $index ]['fixed_to'] = $replacement;
+		$fixed++;
+
+		Splecheh_Logs::addAutoApplyLog(
+			sprintf( 'Added to auto-apply list and fixed in post %d: "%s" → "%s"', $post_id, $error['word'], $replacement ),
+			[ 'language' => $language ]
+		);
+	}
+
+	if ( $fixed > 0 ) {
+		wp_update_post(
+			[
+				'ID'           => $post_id,
+				'post_content' => $content,
+			]
+		);
+		Splecheh_SpellCheckReport::update_report( $post_id, $report );
+		Splecheh_Logs::addLog( 'spellcheck', "Fixed {$fixed} word(s) everywhere in post {$post_id} (auto-apply list, {$language})", [] );
 	}
 
 	wp_send_json_success(

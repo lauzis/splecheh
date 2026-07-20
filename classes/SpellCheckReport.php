@@ -28,6 +28,7 @@ class Splecheh_SpellCheckReport {
 			if ( is_wp_error( $errors ) ) {
 				return $errors;
 			}
+			$errors = self::apply_auto_fixes( $post, $errors, $language );
 			$errors = self::filter_ignored_words( $post_id, $errors, $language );
 		}
 
@@ -119,7 +120,69 @@ class Splecheh_SpellCheckReport {
 	}
 
 	/**
+	 * Applies the global, language-scoped auto-apply list to a post's spell check:
+	 * for each flagged word that has a saved word→replacement pair for the post's
+	 * language, writes the replacement into the post content (every occurrence),
+	 * drops the error from the report, and records the correction in the separate
+	 * auto-apply audit log. Applied on each run/re-run/cron pass, not retroactively.
+	 *
+	 * The language is resolved by splecheh_get_language_code() (Polylang → WPML →
+	 * Settings/locale fallback), so the list only ever touches posts in its language.
+	 *
+	 * @param array[] $errors
+	 * @return array[] Errors that were not auto-applied.
+	 */
+	private static function apply_auto_fixes( WP_Post $post, array $errors, string $language ): array {
+		$pairs = Splecheh_AutoApplyList::get_pairs( $language );
+		if ( empty( $pairs ) ) {
+			return $errors;
+		}
+
+		$content   = $post->post_content;
+		$remaining = [];
+		$applied   = [];
+
+		foreach ( $errors as $error ) {
+			$key = mb_strtolower( $error['word'] );
+			if ( ! isset( $pairs[ $key ] ) ) {
+				$remaining[] = $error;
+				continue;
+			}
+
+			$replacement = $pairs[ $key ];
+			$content     = self::replace_all_occurrences( $content, $error['word'], $replacement );
+			$applied[]   = [
+				'word'        => $error['word'],
+				'replacement' => $replacement,
+			];
+		}
+
+		if ( ! empty( $applied ) ) {
+			wp_update_post(
+				[
+					'ID'           => $post->ID,
+					'post_content' => $content,
+				]
+			);
+
+			foreach ( $applied as $fix ) {
+				Splecheh_Logs::addAutoApplyLog(
+					sprintf( 'Auto-applied fix in post %d: "%s" → "%s"', $post->ID, $fix['word'], $fix['replacement'] ),
+					[ 'language' => $language ]
+				);
+			}
+		}
+
+		return $remaining;
+	}
+
+	/**
 	 * Removes errors for words ignored for this post (post meta) or globally for its language.
+	 *
+	 * Both the per-post and the global ignore list are language-scoped: the global
+	 * list is looked up by the post's resolved language code (Polylang → WPML →
+	 * Settings/locale fallback via splecheh_get_language_code()), so a word ignored
+	 * for one language never suppresses it in a post of another language.
 	 */
 	private static function filter_ignored_words( int $post_id, array $errors, string $language ): array {
 		$post_ignored   = (array) get_post_meta( $post_id, '_splecheh_ignored_words', true );
@@ -320,6 +383,20 @@ class Splecheh_SpellCheckReport {
 		}
 
 		$result = preg_replace( $pattern, $replacement, $content, 1 );
+		return $result !== null ? $result : $content;
+	}
+
+	/**
+	 * Replaces every whole-word, case-insensitive occurrence of $word in $content
+	 * with $replacement. Used by the auto-apply list, which fixes a word everywhere
+	 * it appears in the post rather than a single occurrence.
+	 */
+	public static function replace_all_occurrences( string $content, string $word, string $replacement ): string {
+		if ( $word === '' ) {
+			return $content;
+		}
+		$pattern = '/\b' . preg_quote( $word, '/' ) . '\b/ui';
+		$result  = preg_replace( $pattern, $replacement, $content );
 		return $result !== null ? $result : $content;
 	}
 
