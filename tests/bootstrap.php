@@ -200,6 +200,7 @@ if ( ! function_exists( 'apply_filters' ) ) {
 }
 
 require_once dirname( __DIR__ ) . '/classes/Logs.php';
+require_once dirname( __DIR__ ) . '/classes/AutoApplyList.php';
 require_once dirname( __DIR__ ) . '/classes/SpellCheckReport.php';
 require_once dirname( __DIR__ ) . '/classes/InterpunctionIgnoreList.php';
 require_once dirname( __DIR__ ) . '/classes/InterpunctionReport.php';

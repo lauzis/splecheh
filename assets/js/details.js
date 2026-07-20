@@ -59,7 +59,7 @@
 				.then(function (r) { return r.json(); });
 		}
 
-		function applyFix(rows) {
+		function applyFix(rows, action) {
 			var items = rows.map(function (row) {
 				var input = row.querySelector('.splecheh-replacement');
 				return { index: row.dataset.index, replacement: input ? input.value.trim() : '' };
@@ -70,7 +70,7 @@
 				return;
 			}
 
-			post('splecheh_fix_word', { items: JSON.stringify(items) }).then(function (data) {
+			post(action || 'splecheh_fix_word', { items: JSON.stringify(items) }).then(function (data) {
 				if (!data.success) {
 					showMessage('error', splechehDetails.i18n.requestFailed);
 					return;
@@ -104,6 +104,7 @@
 			var actionsCell = error.resolved
 				? '<span class="splecheh-badge splecheh-badge--current">' + splechehDetails.i18n.resolved + '</span>'
 				: '<button class="button button-primary button-small splecheh-fix">' + splechehDetails.i18n.fix + '</button> ' +
+					'<button class="button button-small splecheh-fix-everywhere">' + splechehDetails.i18n.fixEverywhere + '</button> ' +
 					'<button class="button button-small splecheh-ignore-post">' + splechehDetails.i18n.ignoreInPost + '</button> ' +
 					'<button class="button button-small splecheh-ignore-always">' + splechehDetails.i18n.ignoreAlways + '</button>';
 
@@ -201,7 +202,9 @@
 			var row = e.target.closest('tr');
 			if (!row) return;
 
-			if (e.target.closest('.splecheh-fix')) {
+			if (e.target.closest('.splecheh-fix-everywhere')) {
+				applyFix([row], 'splecheh_fix_everywhere');
+			} else if (e.target.closest('.splecheh-fix')) {
 				applyFix([row]);
 			} else if (e.target.closest('.splecheh-ignore-post')) {
 				applyIgnore('splecheh_ignore_in_post', [row]);
@@ -241,6 +244,8 @@
 
 				if (action === 'fix') {
 					applyFix(rows);
+				} else if (action === 'fix_everywhere') {
+					applyFix(rows, 'splecheh_fix_everywhere');
 				} else if (action === 'ignore_in_post') {
 					applyIgnore('splecheh_ignore_in_post', rows);
 				} else if (action === 'ignore_always') {

@@ -76,6 +76,14 @@ Run `composer install` to pull in dev dependencies (PHPUnit), then `composer tes
 
 ## Change log
 
+### --- 0.23.0 ---
+- Added a global, language-scoped **auto-apply list** of word→replacement corrections, mirroring the existing global ignore list. New `Splecheh_AutoApplyList` data store (`splecheh_auto_apply_list` option), keyed per language code from `splecheh_get_language_code()` (Polylang → WPML → Settings/locale fallback), so an entry only ever touches posts in its own language.
+- Added a **"Fix everywhere in {language}"** row action and bulk action to the Spell Check Details page: saves the current word→replacement combo to the auto-apply list for the post's language, fixes every occurrence of the word in the current post right away, and resolves the issue. The `{language}` in the label is the post's resolved language code.
+- Spell check runs now apply the auto-apply list: before flagging, any misspelled word with a saved replacement for the post's language is written into the post content (every occurrence, via `Splecheh_SpellCheckReport::replace_all_occurrences()`) and dropped from the report instead of being flagged. Applied on the next run/re-run/cron pass, not retroactively — so after adding a word you can re-run manually or let the background cron eventually fix it across all posts in that language.
+- Auto-applied fixes are recorded in a **separate** `auto-apply-YYYY-MM-DD.log` audit log (via `Splecheh_Logs::addAutoApplyLog()`), kept apart from the main `splecheh-*.log` files so content changes made automatically can be tracked on their own.
+- Added a new **Settings > Auto-Apply List** admin sub-page (mirroring the Ignore List page) listing entries per language as word → replacement, with a per-row Remove action.
+- Confirmed the ignore-list check is language-scoped the same way (Polylang → WPML → fallback) and added clarifying code comments; nothing was broken for Polylang — both lists filter by the post's resolved language.
+
 ### --- 0.22.1 ---
 - Fixed a Spell Check bug where a misspelled word's shown "example sentence" could be a completely unrelated sentence: `extract_sentence()` searched for the word as a plain substring, so a short word like "TV" or "Up" could match inside an unrelated, correctly-spelled word elsewhere in the post (e.g. "TV" inside "atvērtā", "Up" inside "Super") instead of where it actually occurred. Now matches whole words only, same as the highlighting/replacement logic elsewhere in this file already did.
 - Added a read-only "Suggestion" column to the Spell Check Details table (right after "Word"), listing every suggestion for that word with the part that differs from the original in bold — separate from the existing editable "Replacement" field, so all alternatives are visible at a glance without needing to guess or type them in.
