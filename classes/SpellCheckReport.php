@@ -30,6 +30,7 @@ class Splecheh_SpellCheckReport {
 			}
 			$errors = self::apply_auto_fixes( $post, $errors, $language );
 			$errors = self::filter_ignored_words( $post_id, $errors, $language );
+			$errors = self::filter_term_ignored( $errors, $language );
 		}
 
 		$report = [
@@ -201,6 +202,92 @@ class Splecheh_SpellCheckReport {
 				}
 			)
 		);
+	}
+
+	/**
+	 * Drops errors that are part of a globally-ignored, language-scoped multi-word
+	 * term (e.g. "Steam Deck", "Lego Batman"). Aspell flags each word of such a term
+	 * separately ("Steam", "Deck"); an error is dropped when the flagged word is one
+	 * of a listed term's words AND the word's sentence (the report excerpt) contains
+	 * every word of that term. Partial appearances of a term are still flagged.
+	 *
+	 * The term list is looked up by the post's resolved language code, the same way
+	 * as the ignore/auto-apply lists, so a term never suppresses words in another
+	 * language.
+	 *
+	 * @param array[] $errors
+	 * @return array[]
+	 */
+	private static function filter_term_ignored( array $errors, string $language ): array {
+		$terms = Splecheh_TermIgnoreList::get_terms( $language );
+		if ( empty( $terms ) ) {
+			return $errors;
+		}
+
+		return array_values(
+			array_filter(
+				$errors,
+				static function ( array $error ) use ( $terms ): bool {
+					return ! self::is_term_ignored( (string) $error['word'], (string) $error['excerpt'], $terms );
+				}
+			)
+		);
+	}
+
+	/**
+	 * Whether a flagged word in a given sentence should be suppressed by one of the
+	 * listed terms: the word must be a whole-word part of the term, and the sentence
+	 * must contain every word of that term (whole-word, case-insensitive) so that a
+	 * partial term (only "Steam", not "Steam Deck") is still flagged.
+	 *
+	 * @param string[] $terms
+	 */
+	public static function is_term_ignored( string $word, string $sentence, array $terms ): bool {
+		$word = trim( $word );
+		if ( $word === '' ) {
+			return false;
+		}
+
+		foreach ( $terms as $term ) {
+			$term_words = preg_split( '/\s+/u', trim( (string) $term ) ) ?: [];
+			$term_words = array_values( array_filter( $term_words, static fn( $w ) => $w !== '' ) );
+			if ( count( $term_words ) < 2 ) {
+				// A term must span at least two words to be meaningful here; a single-word
+				// entry belongs on the plain ignore list, not the term list.
+				continue;
+			}
+
+			// The flagged word must itself be one of the term's words.
+			if ( ! self::contains_whole_word( $term, $word ) ) {
+				continue;
+			}
+
+			// Every word of the term must appear in the sentence for it to count as complete.
+			$complete = true;
+			foreach ( $term_words as $term_word ) {
+				if ( ! self::contains_whole_word( $sentence, $term_word ) ) {
+					$complete = false;
+					break;
+				}
+			}
+
+			if ( $complete ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Whether $needle appears as a whole word (case-insensitive) in $haystack, using
+	 * the same word-boundary matching as the highlighting/replacement logic elsewhere.
+	 */
+	private static function contains_whole_word( string $haystack, string $needle ): bool {
+		if ( $needle === '' ) {
+			return false;
+		}
+		return preg_match( '/\b' . preg_quote( $needle, '/' ) . '\b/ui', $haystack ) === 1;
 	}
 
 	/**
