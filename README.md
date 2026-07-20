@@ -76,6 +76,11 @@ Run `composer install` to pull in dev dependencies (PHPUnit), then `composer tes
 
 ## Change log
 
+### --- 0.24.0 ---
+- Added a global, language-scoped **term ignore list** of multi-word terms (e.g. "Steam Deck", "Lego Batman") that spell check should not flag. New `Splecheh_TermIgnoreList` data store (`splecheh_term_ignore_list` option), keyed per language code from `splecheh_get_language_code()` (Polylang → WPML → Settings/locale fallback), mirroring the existing ignore/auto-apply lists so an entry only ever affects posts in its own language. Terms are stored lowercased and whitespace-collapsed.
+- Spell check runs now drop errors covered by a listed term: Aspell flags each word of a term separately (e.g. "Steam" and "Deck"), so after flagging, any word that is a whole-word part of a listed term whose **full** term also appears (every word, whole-word, case-insensitive) in the flagged word's sentence is removed from the report. A partial appearance of the term (only "Steam", not "Steam Deck") is still flagged. Backed by `Splecheh_SpellCheckReport::is_term_ignored()`, applied via `filter_term_ignored()` in the single `run()` path shared by manual, bulk, background-cron, and Details re-run checks.
+- Added a new **Settings > Term Ignore List** admin sub-page (mirroring the Ignore List page) listing terms per language with an add-term input and a per-row Remove action.
+
 ### --- 0.23.0 ---
 - Added a global, language-scoped **auto-apply list** of word→replacement corrections, mirroring the existing global ignore list. New `Splecheh_AutoApplyList` data store (`splecheh_auto_apply_list` option), keyed per language code from `splecheh_get_language_code()` (Polylang → WPML → Settings/locale fallback), so an entry only ever touches posts in its own language.
 - Added a **"Fix everywhere in {language}"** row action and bulk action to the Spell Check Details page: saves the current word→replacement combo to the auto-apply list for the post's language, fixes every occurrence of the word in the current post right away, and resolves the issue. The `{language}` in the label is the post's resolved language code.

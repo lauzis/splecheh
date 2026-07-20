@@ -14,7 +14,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'SPLECHEH_VERSION', '0.23.0' );
+define( 'SPLECHEH_VERSION', '0.24.0' );
 define( 'SPLECHEH_DIR', plugin_dir_path( __FILE__ ) );
 define( 'SPLECHEH_LOG_PATH', SPLECHEH_DIR . 'logs' );
 define( 'SPLECHEH_PLUGIN_FILE', __FILE__ );
@@ -24,6 +24,7 @@ require_once SPLECHEH_DIR . 'classes/Notification.php';
 require_once SPLECHEH_DIR . 'classes/NotificationManager.php';
 require_once SPLECHEH_DIR . 'classes/IgnoreList.php';
 require_once SPLECHEH_DIR . 'classes/AutoApplyList.php';
+require_once SPLECHEH_DIR . 'classes/TermIgnoreList.php';
 require_once SPLECHEH_DIR . 'classes/SpellCheckReport.php';
 require_once SPLECHEH_DIR . 'classes/SplechehCron.php';
 require_once SPLECHEH_DIR . 'classes/InterpunctionIgnoreList.php';
@@ -176,6 +177,15 @@ function splecheh_register_menu(): void {
 		'edit_posts',
 		'splecheh-auto-apply-list',
 		'splecheh_page_auto_apply_list'
+	);
+
+	add_submenu_page(
+		'splecheh',
+		__( 'Term Ignore List', 'splecheh' ),
+		__( 'Term Ignore List', 'splecheh' ),
+		'edit_posts',
+		'splecheh-term-ignore-list',
+		'splecheh_page_term_ignore_list'
 	);
 
 	if ( splecheh_logs_enabled() ) {
@@ -565,6 +575,10 @@ function splecheh_page_ignore_list(): void {
 
 function splecheh_page_auto_apply_list(): void {
 	require_once SPLECHEH_DIR . 'templates/auto-apply-list.php';
+}
+
+function splecheh_page_term_ignore_list(): void {
+	require_once SPLECHEH_DIR . 'templates/term-ignore-list.php';
 }
 
 function splecheh_page_interpunction_check(): void {
