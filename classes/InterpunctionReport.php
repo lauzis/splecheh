@@ -32,8 +32,7 @@ class Splecheh_InterpunctionReport {
 
 		$language = splecheh_get_language_code( $post_id );
 
-		$plain_text     = Splecheh_SpellCheckReport::prepare_text( $post->post_content, splecheh_ignore_shortcodes_enabled() );
-		$sentences      = self::split_into_sentences( $plain_text );
+		$sentences      = self::split_content_into_sentences( $post->post_content, splecheh_ignore_shortcodes_enabled() );
 		$sentence_count = count( $sentences );
 		$chunks_total   = Splecheh_InterpunctionBackend::count_chunks( $sentence_count );
 
@@ -109,6 +108,31 @@ class Splecheh_InterpunctionReport {
 		}
 
 		return $report;
+	}
+
+	/**
+	 * Splits a post's HTML content into sentences, one block-level chunk at a time,
+	 * so a sentence is never assembled across a block boundary (a header run into the
+	 * next paragraph, one list item into the next, …). Each block's plain text is
+	 * split independently and the results are concatenated in document order. This is
+	 * the tree-based path both the real Interpunction Check and the Settings "Test"
+	 * button use, replacing the old "flatten the whole post, then split" approach —
+	 * see issue #62.
+	 *
+	 * @return string[]
+	 */
+	public static function split_content_into_sentences( string $content, bool $ignore_shortcodes ): array {
+		if ( $ignore_shortcodes ) {
+			$content = Splecheh_SpellCheckReport::strip_shortcodes( $content );
+		}
+
+		$sentences = [];
+		foreach ( Splecheh_ContentSplitter::plain_texts( $content ) as $block_text ) {
+			foreach ( self::split_into_sentences( $block_text ) as $sentence ) {
+				$sentences[] = $sentence;
+			}
+		}
+		return $sentences;
 	}
 
 	/**

@@ -3,7 +3,7 @@
  * Plugin Name: Splecheh - WordPress spellcheck plugin
  * Plugin URI:  https://github.com/lauzis/splecheh
  * Description: Run spell check on all articles and post types to find spelling errors.
- * Version:     0.23.0
+ * Version:     0.25.0
  * Author:      Aivars Lauzis
  * Text Domain: splecheh
  * License:     MIT
@@ -14,7 +14,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'SPLECHEH_VERSION', '0.24.0' );
+define( 'SPLECHEH_VERSION', '0.25.0' );
 define( 'SPLECHEH_DIR', plugin_dir_path( __FILE__ ) );
 define( 'SPLECHEH_LOG_PATH', SPLECHEH_DIR . 'logs' );
 define( 'SPLECHEH_PLUGIN_FILE', __FILE__ );
@@ -25,6 +25,7 @@ require_once SPLECHEH_DIR . 'classes/NotificationManager.php';
 require_once SPLECHEH_DIR . 'classes/IgnoreList.php';
 require_once SPLECHEH_DIR . 'classes/AutoApplyList.php';
 require_once SPLECHEH_DIR . 'classes/TermIgnoreList.php';
+require_once SPLECHEH_DIR . 'classes/ContentSplitter.php';
 require_once SPLECHEH_DIR . 'classes/SpellCheckReport.php';
 require_once SPLECHEH_DIR . 'classes/SplechehCron.php';
 require_once SPLECHEH_DIR . 'classes/InterpunctionIgnoreList.php';
@@ -92,6 +93,7 @@ add_action( 'admin_enqueue_scripts', 'splecheh_enqueue_details_assets' );
 add_action( 'admin_enqueue_scripts', 'splecheh_enqueue_interpunction_assets' );
 add_action( 'admin_enqueue_scripts', 'splecheh_enqueue_interpunction_details_assets' );
 add_action( 'admin_enqueue_scripts', 'splecheh_enqueue_settings_assets' );
+add_action( 'admin_enqueue_scripts', 'splecheh_enqueue_split_test_assets' );
 add_action( 'wp_ajax_splecheh_dismiss_notification', [ 'Splecheh_NotificationManager', 'handle_dismiss' ] );
 add_action( 'wp_ajax_splecheh_run', 'splecheh_ajax_run_spellcheck' );
 add_action( 'wp_ajax_splecheh_bulk_run', 'splecheh_ajax_bulk_run' );
@@ -112,6 +114,8 @@ add_action( 'wp_ajax_splecheh_interpunction_ignore_always', 'splecheh_ajax_inter
 add_action( 'wp_ajax_splecheh_interpunction_mark_complete', 'splecheh_ajax_interpunction_mark_complete' );
 add_action( 'wp_ajax_splecheh_interpunction_test', 'splecheh_ajax_interpunction_test' );
 add_action( 'wp_ajax_splecheh_interpunction_test_search_posts', 'splecheh_ajax_interpunction_test_search_posts' );
+add_action( 'wp_ajax_splecheh_split_test', 'splecheh_ajax_split_test' );
+add_action( 'wp_ajax_splecheh_split_test_search_posts', 'splecheh_ajax_split_test_search_posts' );
 add_action( 'carbon_fields_theme_options_container_saved', 'splecheh_sync_bg_cron' );
 
 function splecheh_sync_bg_cron(): void {
@@ -186,6 +190,15 @@ function splecheh_register_menu(): void {
 		'edit_posts',
 		'splecheh-term-ignore-list',
 		'splecheh_page_term_ignore_list'
+	);
+
+	add_submenu_page(
+		'splecheh',
+		__( 'Split Test', 'splecheh' ),
+		__( 'Split Test', 'splecheh' ),
+		'edit_posts',
+		'splecheh-split-test',
+		'splecheh_page_split_test'
 	);
 
 	if ( splecheh_logs_enabled() ) {
@@ -581,6 +594,10 @@ function splecheh_page_term_ignore_list(): void {
 	require_once SPLECHEH_DIR . 'templates/term-ignore-list.php';
 }
 
+function splecheh_page_split_test(): void {
+	require_once SPLECHEH_DIR . 'templates/split-test.php';
+}
+
 function splecheh_page_interpunction_check(): void {
 	require_once SPLECHEH_DIR . 'templates/interpunction-check.php';
 }
@@ -775,6 +792,39 @@ function splecheh_enqueue_settings_assets(): void {
 			'i18n'    => [
 				'testing'       => __( 'Testing…', 'splecheh' ),
 				'requestFailed' => __( 'Test request failed. Please try again.', 'splecheh' ),
+			],
+		]
+	);
+}
+
+function splecheh_enqueue_split_test_assets(): void {
+	$page = isset( $_GET['page'] ) ? sanitize_key( wp_unslash( $_GET['page'] ) ) : '';
+	if ( $page !== 'splecheh-split-test' ) {
+		return;
+	}
+
+	wp_enqueue_script(
+		'splecheh-split-test',
+		plugins_url( 'assets/js/split-test.js', SPLECHEH_PLUGIN_FILE ),
+		[ 'jquery-ui-autocomplete' ],
+		SPLECHEH_VERSION,
+		true
+	);
+	wp_localize_script(
+		'splecheh-split-test',
+		'splechehSplitTest',
+		[
+			'ajaxUrl' => admin_url( 'admin-ajax.php' ),
+			'nonce'   => wp_create_nonce( 'splecheh_split_test' ),
+			'i18n'    => [
+				'running'       => __( 'Splitting…', 'splecheh' ),
+				'requestFailed' => __( 'Request failed. Please try again.', 'splecheh' ),
+				'chunksFound'   => __( 'block chunk(s) found — no text is merged across block boundaries.', 'splecheh' ),
+				'noChunks'      => __( 'No block chunks found in the content.', 'splecheh' ),
+				'looseText'     => __( '(loose text)', 'splecheh' ),
+				'sentences'     => __( 'Sentences', 'splecheh' ),
+				'plainText'     => __( 'Plain text', 'splecheh' ),
+				'innerHtml'     => __( 'Inner HTML (inline formatting preserved)', 'splecheh' ),
 			],
 		]
 	);
@@ -1478,6 +1528,104 @@ function splecheh_ajax_interpunction_test_search_posts(): void {
 	check_ajax_referer( 'splecheh_interpunction_test', 'nonce' );
 
 	if ( ! current_user_can( 'manage_options' ) ) {
+		wp_send_json_error( [ 'message' => __( 'Insufficient permissions.', 'splecheh' ) ], 403 );
+	}
+
+	$search = isset( $_GET['s'] ) ? sanitize_text_field( wp_unslash( $_GET['s'] ) ) : '';
+	if ( $search === '' ) {
+		wp_send_json_success( [] );
+	}
+
+	$query = new WP_Query(
+		[
+			's'                      => $search,
+			'post_type'              => splecheh_get_enabled_post_types(),
+			'post_status'            => 'publish',
+			'posts_per_page'         => 20,
+			'orderby'                => 'relevance',
+			'no_found_rows'          => true,
+			'update_post_meta_cache' => false,
+			'update_post_term_cache' => false,
+		]
+	);
+
+	$results = array_map(
+		static function ( WP_Post $post ): array {
+			return [
+				'id'    => $post->ID,
+				'label' => $post->post_title !== '' ? $post->post_title : '(no title)',
+			];
+		},
+		$query->posts
+	);
+
+	wp_send_json_success( $results );
+}
+
+/**
+ * Powers the "Split Test" page: given either a chosen post/page or a raw HTML
+ * snippet, walks the content tree and returns the block-level chunks (tag, plain
+ * text, inner HTML with inline formatting preserved, and the sentences each block
+ * splits into) — purely a preview, nothing is checked, fixed, or saved.
+ */
+function splecheh_ajax_split_test(): void {
+	check_ajax_referer( 'splecheh_split_test', 'nonce' );
+
+	if ( ! current_user_can( 'edit_posts' ) ) {
+		wp_send_json_error( [ 'message' => __( 'Insufficient permissions.', 'splecheh' ) ], 403 );
+	}
+
+	$post_id           = isset( $_POST['post_id'] ) ? absint( $_POST['post_id'] ) : 0;
+	$ignore_shortcodes = ! empty( $_POST['ignore_shortcodes'] );
+	$source            = 'html';
+	$post_title        = '';
+
+	if ( $post_id > 0 ) {
+		$post = get_post( $post_id );
+		if ( ! $post || ! current_user_can( 'edit_post', $post_id ) ) {
+			wp_send_json_error( [ 'message' => __( 'You cannot read that post.', 'splecheh' ) ], 403 );
+		}
+		$content    = $post->post_content;
+		$source     = 'post';
+		$post_title = $post->post_title;
+	} else {
+		// Raw HTML pasted into the textarea: keep it verbatim (no sanitizing that would
+		// strip the very tags we want to test the splitter against), just unslash it.
+		$content = isset( $_POST['content'] ) ? (string) wp_unslash( $_POST['content'] ) : '';
+	}
+
+	$raw_content = $content;
+	if ( $ignore_shortcodes ) {
+		$content = Splecheh_SpellCheckReport::strip_shortcodes( $content );
+	}
+
+	$chunks = array_map(
+		static function ( array $chunk ): array {
+			$chunk['sentences'] = Splecheh_InterpunctionReport::split_into_sentences( $chunk['text'] );
+			return $chunk;
+		},
+		Splecheh_ContentSplitter::split( $content )
+	);
+
+	wp_send_json_success(
+		[
+			'source'      => $source,
+			'post_title'  => $post_title,
+			'chunk_count' => count( $chunks ),
+			'chunks'      => $chunks,
+			'raw_length'  => strlen( $raw_content ),
+		]
+	);
+}
+
+/**
+ * Autocomplete search for the Split Test page's post picker, matching titles across
+ * the post types enabled for checking. Mirrors the Interpunction test search.
+ */
+function splecheh_ajax_split_test_search_posts(): void {
+	check_ajax_referer( 'splecheh_split_test', 'nonce' );
+
+	if ( ! current_user_can( 'edit_posts' ) ) {
 		wp_send_json_error( [ 'message' => __( 'Insufficient permissions.', 'splecheh' ) ], 403 );
 	}
 
