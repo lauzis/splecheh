@@ -76,6 +76,9 @@ Run `composer install` to pull in dev dependencies (PHPUnit), then `composer tes
 
 ## Change log
 
+### --- 0.27.0 ---
+- Added a manual **"Add an entry"** input (language code + word + replacement) to the **Settings > Auto-Apply List** admin sub-page (issue #66), mirroring the Ignore List page's add-word UI added in 0.26.0. It writes to the same global, language-scoped `Splecheh_AutoApplyList` store used by the Details page's "Fix everywhere in {language}" action — the word is trimmed and lowercased, the replacement trimmed, and re-adding an existing word updates its replacement — so a pair added here is applied by spell check runs exactly as if it had been saved from a report, and shows up in the per-language list with the existing per-row Remove action. Reuses the same nonce/redirect pattern as the existing Remove handler.
+
 ### --- 0.26.0 ---
 - Added a manual **"Add a word"** input (language code + word) to the **Settings > Ignore List** admin sub-page (issue #64), mirroring the Term Ignore List page's add-term UI. It writes to the same global, language-scoped `Splecheh_IgnoreList` store used by the Details page's "Ignore always" action — trimmed, lowercased, duplicates skipped — so a word added here is skipped by spell check runs exactly as if it had been ignored from a report, and shows up in the per-language list with the existing per-row Remove action. Reuses the same nonce/redirect pattern as the existing Remove handler.
 
