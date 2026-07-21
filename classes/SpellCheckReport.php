@@ -68,20 +68,22 @@ class Splecheh_SpellCheckReport {
 	/**
 	 * Strips HTML and decodes entities for plain-text spell checking, optionally
 	 * removing shortcode literals first so they never surface as spelling errors.
+	 *
+	 * Now backed by the shared tree-based splitter (Splecheh_ContentSplitter): the
+	 * content is broken into block-level chunks and their plain texts are joined with
+	 * a single space, so adjoining sentences/paragraphs are never glued into one word
+	 * (e.g. "sakāmo.</p><p>Var" stays "sakāmo. Var") — the same guarantee the old
+	 * block-closing-tag regex gave, but via one code path shared with Interpunction
+	 * Check instead of two hand-maintained flattening rules.
 	 */
 	public static function prepare_text( string $content, bool $ignore_shortcodes ): string {
 		if ( $ignore_shortcodes ) {
 			$content = self::strip_shortcodes( $content );
 		}
 
-		// Replace block-level closing tags and <br> with a space before stripping tags,
-		// otherwise wp_strip_all_tags() removes them and merges adjoining sentences/paragraphs
-		// into a single word (e.g. "sakāmo.</p><p>Var" becomes "sakāmo.Var").
-		$content = preg_replace( '#</(?:p|div|li|ul|ol|h[1-6]|blockquote|section|article|tr|table)\s*>|<br\s*/?>#i', ' ', $content );
-
-		$text = wp_strip_all_tags( $content );
-		$text = html_entity_decode( $text, ENT_QUOTES | ENT_HTML5, 'UTF-8' );
-		return trim( preg_replace( '/\s+/u', ' ', $text ) );
+		$blocks = Splecheh_ContentSplitter::plain_texts( $content );
+		$text   = implode( ' ', $blocks );
+		return trim( (string) preg_replace( '/\s+/u', ' ', $text ) );
 	}
 
 	/**

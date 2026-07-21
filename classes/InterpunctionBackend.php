@@ -61,9 +61,8 @@ class Splecheh_InterpunctionBackend {
 		if ( $post_id > 0 ) {
 			$post = get_post( $post_id );
 			if ( $post ) {
-				$language   = splecheh_get_language_code( $post_id );
-				$plain_text = Splecheh_SpellCheckReport::prepare_text( $post->post_content, splecheh_ignore_shortcodes_enabled() );
-				$sentences  = Splecheh_InterpunctionReport::split_into_sentences( $plain_text );
+				$language  = splecheh_get_language_code( $post_id );
+				$sentences = Splecheh_InterpunctionReport::split_content_into_sentences( $post->post_content, splecheh_ignore_shortcodes_enabled() );
 
 				$limit = $sentence_limit ?? self::DEFAULT_TEST_MAX_SENTENCES;
 				if ( $limit > 0 ) {
