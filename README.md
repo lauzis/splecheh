@@ -76,6 +76,9 @@ Run `composer install` to pull in dev dependencies (PHPUnit), then `composer tes
 
 ## Change log
 
+### --- 0.26.0 ---
+- Added a manual **"Add a word"** input (language code + word) to the **Settings > Ignore List** admin sub-page (issue #64), mirroring the Term Ignore List page's add-term UI. It writes to the same global, language-scoped `Splecheh_IgnoreList` store used by the Details page's "Ignore always" action — trimmed, lowercased, duplicates skipped — so a word added here is skipped by spell check runs exactly as if it had been ignored from a report, and shows up in the per-language list with the existing per-row Remove action. Reuses the same nonce/redirect pattern as the existing Remove handler.
+
 ### --- 0.25.0 ---
 - Reworked how post content is split for both checks so text is never merged across block boundaries (issue #62). A new `Splecheh_ContentSplitter` walks the content's HTML tree and returns one **block-level chunk** per leaf block — headings (`h1`–`h6`), `p`, `li`, `blockquote`, `td`/`th`, `div`, `pre`, `figcaption`, and similar — recursing into any element (including non-block wrappers like `ul`/`ol`/`table`) that itself contains block children, and collecting loose inline/text between blocks into their own anonymous chunk. Each chunk keeps both its plain text (for spell check / sentence splitting) and its inner HTML (so inline formatting like `<strong>`, `<em>`, `<a>` is preserved per chunk). Uses PHP's built-in DOMDocument rather than adding a Composer dependency — it ships with every supported PHP build and needs no changes to the committed production `vendor/`.
 - `Splecheh_SpellCheckReport::prepare_text()` is now backed by the splitter (block plain-texts joined by a single space), retiring the old block-closing-tag regex so Spell Check and Interpunction Check share one flattening path. Existing report/ignore/auto-apply/term-ignore behavior is unchanged.
