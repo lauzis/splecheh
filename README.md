@@ -12,6 +12,173 @@ Editors and content managers who need to maintain writing quality across a WordP
 - Admin menu accessible to editors (and above).
 - Optional Interpunction Check: uses an LLM to fix punctuation and capitalization, sentence by sentence (see below).
 
+## How It Works
+
+This section diagrams how each feature actually behaves in code. Node colors follow the project convention: **external systems / persistence** (Aspell, LLM providers, WordPress storage) are purple, **content-modifying actions** are green, and **report / output artifacts** are blue.
+
+### Text Splitting (`Splecheh_ContentSplitter`)
+
+Both checks start from the same tree-based split so text is never merged across a block boundary (issue #62). Each block-level element (`h1`–`h6`, `p`, `li`, `blockquote`, `td`/`th`, `div`, `pre`, `figcaption`, …) becomes one **chunk** carrying both its plain text (for spell check / sentence splitting) and its inner HTML (so inline `<strong>`/`<em>`/`<a>` formatting is preserved). A container that itself holds block children is recursed into; loose inline/text between blocks is flushed into its own anonymous chunk.
+
+```mermaid
+flowchart TD
+    A[post_content HTML] --> B{Ignore Shortcodes<br/>enabled?}
+    B -->|yes| C[strip_shortcodes:<br/>bracket literals → space]
+    B -->|no| D[load HTML tree<br/>via DOMDocument / libxml]
+    C --> D
+    D --> E[walk children]
+    E --> F{Node kind?}
+    F -->|leaf block| G[emit chunk:<br/>tag + plain text + inner HTML]
+    F -->|block with<br/>block children| H[recurse into element]
+    F -->|inline / text node| I[buffer as loose inline run]
+    H --> E
+    I --> J[flush at next block boundary<br/>→ anonymous chunk]
+    G --> K[ordered chunk list]
+    J --> K
+    K --> L[Spell Check:<br/>plain texts joined by a space]
+    K --> M[Interpunction Check:<br/>sentences split per block, in order]
+
+    classDef output fill:#0075ca,color:#fff
+    class K,L,M output
+```
+
+### Writing Fixes Back
+
+A fix always edits the raw `post_content` with whole-word, case-insensitive matching — inline formatting survives because the surrounding HTML is left untouched. The three entry points differ only in scope:
+
+```mermaid
+flowchart TD
+    F1[Details: Fix one occurrence] --> R1[replace_occurrence<br/>locate via excerpt, replace 1]
+    F2[Auto-Apply list match on a run] --> R2[replace_all_occurrences<br/>every whole-word match]
+    F3[Interpunction: Fix a sentence] --> R3[apply_fix<br/>first case-insensitive match]
+    R1 --> WP[(wp_update_post<br/>or report JSON update)]
+    R2 --> WP
+    R3 --> WP
+
+    classDef store fill:#6d28d9,color:#fff
+    classDef act fill:#16a34a,color:#fff
+    class WP store
+    class R1,R2,R3 act
+```
+
+### Spell Check (`Splecheh_SpellCheckReport::run`)
+
+Content is flattened via the splitter, checked against Aspell/pspell, then passed through the auto-apply and the three ignore filters **in this order** before a JSON report is written to `wp-content/uploads/splecheh/` and the unresolved count is stored in post meta.
+
+```mermaid
+flowchart TD
+    A[run post_id] --> B[prepare_text:<br/>splitter → plain text]
+    B --> C{Empty text?}
+    C -->|yes| Z[empty report]
+    C -->|no| D[[Aspell / pspell lookup]]
+    D --> E{Wordlist<br/>installed?}
+    E -->|no| ERR[friendly missing-wordlist error]
+    E -->|yes| F[misspelled words<br/>+ suggestions + example sentence]
+    F --> G[apply_auto_fixes:<br/>replace + drop + audit log]
+    G --> H[filter_ignored_words:<br/>per-post meta + global list]
+    H --> I[filter_term_ignored:<br/>multi-word terms]
+    I --> R[save_report JSON]
+    Z --> R
+    R --> M[(post meta:<br/>checked_at, version, issue_count)]
+
+    classDef ext fill:#6d28d9,color:#fff
+    classDef store fill:#6d28d9,color:#fff
+    classDef act fill:#16a34a,color:#fff
+    classDef output fill:#0075ca,color:#fff
+    class D ext
+    class M store
+    class G act
+    class R output
+```
+
+### Auto-Apply List (`Splecheh_AutoApplyList`)
+
+A global, language-scoped store of `word → replacement` pairs (`splecheh_auto_apply_list` option), keyed by the post's resolved language code (Polylang → WPML → Settings/locale fallback). Entries are added from the Details page's "Fix everywhere in {language}" action or the Settings > Auto-Apply List page. On each run, a matching misspelling is rewritten everywhere in the post, dropped from the report, and recorded in a **separate** `auto-apply-YYYY-MM-DD.log` audit log — applied on the next run/re-run/cron pass, not retroactively.
+
+```mermaid
+flowchart TD
+    subgraph Add
+      A1[Details: Fix everywhere in language] --> S[(splecheh_auto_apply_list<br/>option, per language)]
+      A2[Settings: Add an entry] --> S
+    end
+    subgraph Run
+      B[flagged word on a run] --> C{lowercased word<br/>in pairs for this language?}
+      C -->|no| K[keep as report error]
+      C -->|yes| D[replace_all_occurrences<br/>in post_content]
+      D --> E[(wp_update_post)]
+      D --> L[[auto-apply-YYYY-MM-DD.log]]
+      D --> P[drop from report]
+    end
+    S -.lookup by language.-> C
+
+    classDef store fill:#6d28d9,color:#fff
+    classDef act fill:#16a34a,color:#fff
+    class S,E,L store
+    class D act
+```
+
+### The Three Ignore Mechanisms
+
+All three filter errors during a spell check run and are language-scoped, but they differ in reach:
+
+- **Per-post ignore** — `_splecheh_ignored_words` post meta; only affects that one post ("Ignore in post").
+- **Global ignore list** — `splecheh_ignore_list` option, per language; affects every post in that language ("Ignore always" / Settings > Ignore List).
+- **Term ignore list** — `splecheh_term_ignore_list` option, per language, for multi-word terms (e.g. "Steam Deck"). Aspell flags each word separately, so an error is only dropped when the flagged word is part of a listed term **and** the word's sentence contains every word of that term (a partial appearance is still flagged).
+
+```mermaid
+flowchart TD
+    E[flagged word + example sentence] --> A{word in per-post<br/>ignored list?}
+    A -->|yes| DROP[drop from report]
+    A -->|no| B{word in global<br/>ignore list for language?}
+    B -->|yes| DROP
+    B -->|no| C{word part of a listed term<br/>AND full term present<br/>in the sentence?}
+    C -->|yes| DROP
+    C -->|no| KEEP[keep as report error]
+
+    M1[(_splecheh_ignored_words<br/>post meta)] -.-> A
+    M2[(splecheh_ignore_list<br/>option)] -.-> B
+    M3[(splecheh_term_ignore_list<br/>option)] -.-> C
+
+    classDef store fill:#6d28d9,color:#fff
+    classDef output fill:#0075ca,color:#fff
+    class M1,M2,M3 store
+    class KEEP,DROP output
+```
+
+### Interpunction Check (`Splecheh_InterpunctionReport::run`)
+
+An opt-in, LLM-based punctuation/capitalization check. It is gated on Spell Check being clean first (when "Require Spell Check First" is on), splits the post into sentences **per block**, sends them to the configured provider in chunks (default 5 sentences/call), keeps only sentences the model actually changed, and saves a report to `wp-content/uploads/splecheh-interpunction/`. A failed chunk still saves the chunks that already succeeded as a partial report.
+
+```mermaid
+flowchart TD
+    A[run post_id] --> G{Require Spell Check First<br/>and post not clean?}
+    G -->|yes| STOP[skip: no LLM call]
+    G -->|no| B[split_content_into_sentences:<br/>per-block sentence split]
+    B --> C[chunk sentences<br/>default 5 per call]
+    C --> D{Provider type}
+    D -->|Commandline| P1[[shell command<br/>JSON in → JSON out]]
+    D -->|OpenAI| P2[[OpenAI API]]
+    D -->|Claude| P3[[Anthropic API]]
+    D -->|Gemini| P4[[Gemini API]]
+    P1 --> E{chunk failed?}
+    P2 --> E
+    P3 --> E
+    P4 --> E
+    E -->|yes| PART[save succeeded chunks<br/>as partial report + return error]
+    E -->|no| F[build_issues:<br/>keep only changed sentences]
+    F --> H[filter_ignored_sentences:<br/>per-post + global]
+    H --> R[save report JSON<br/>+ diff_highlight per issue]
+    PART --> M[(post meta:<br/>checked_at, chunks_processed/total)]
+    R --> M
+
+    classDef ext fill:#6d28d9,color:#fff
+    classDef store fill:#6d28d9,color:#fff
+    classDef output fill:#0075ca,color:#fff
+    class P1,P2,P3,P4 ext
+    class M store
+    class R,PART output
+```
+
 ## Interpunction Check
 Interpunction Check is a separate, opt-in feature (Settings > Interpunction Check, disabled by default) that reviews punctuation and capitalization using an LLM instead of a dictionary — sentence by sentence, with the same Run Now/Re-run, report/status tracking, and Details page (Fix / Ignore in post / Ignore always / Mark Complete) as Spell Check.
 
