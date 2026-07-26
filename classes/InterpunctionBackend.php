@@ -532,15 +532,92 @@ class Splecheh_InterpunctionBackend {
 	 * @return array|WP_Error
 	 */
 	private static function parse_results( string $text ) {
-		$text = trim( $text );
-		// Some providers wrap JSON in a fenced code block; strip it if present.
-		$text = (string) preg_replace( '/^```(?:json)?\s*|\s*```$/i', '', $text );
+		$data = self::extract_json_array( $text );
 
-		$data = json_decode( $text, true );
-		if ( ! is_array( $data ) ) {
-			return new WP_Error( 'interpunction_invalid_response', __( 'The interpunction check response was not valid JSON.', 'splecheh' ) );
+		if ( $data === null ) {
+			$detail = self::describe_bad_response( trim( $text ) );
+
+			Splecheh_Logs::addLog( 'interpunction', 'Interpunction response was not valid JSON', [ 'response' => $detail ] );
+
+			return new WP_Error(
+				'interpunction_invalid_response',
+				sprintf(
+					/* translators: %s: description of what the provider returned instead */
+					__( 'The interpunction check response was not valid JSON. %s', 'splecheh' ),
+					$detail
+				)
+			);
 		}
 
 		return $data;
+	}
+
+	/**
+	 * Pulls the JSON array out of a model's reply.
+	 *
+	 * Models routinely wrap the array in a ```json fence, and sometimes introduce it
+	 * with a sentence ("Here is the corrected JSON:") or add a closing remark. Stripping
+	 * only a fence anchored at the very start and end of the reply — as this used to —
+	 * left the markers in place whenever anything surrounded them, failing on output
+	 * that was perfectly usable.
+	 *
+	 * Mirrored in tools/llm-wrapper.php, which runs as its own process and so can't
+	 * share this code.
+	 *
+	 * @return array|null Decoded array, or null when there is no array to be had.
+	 */
+	public static function extract_json_array( string $text ): ?array {
+		$text = trim( $text );
+
+		// A fenced block anywhere in the reply: take what's inside it.
+		if ( preg_match( '/```(?:json)?\s*(.+?)\s*```/is', $text, $matches ) ) {
+			$text = trim( $matches[1] );
+		}
+
+		$decoded = json_decode( $text, true );
+		if ( is_array( $decoded ) ) {
+			return $decoded;
+		}
+
+		// Otherwise take the outermost [ … ] and try that, which drops any prose the
+		// model wrapped around the array.
+		$start = strpos( $text, '[' );
+		$end   = strrpos( $text, ']' );
+		if ( $start === false || $end === false || $end < $start ) {
+			return null;
+		}
+
+		$decoded = json_decode( substr( $text, $start, $end - $start + 1 ), true );
+
+		return is_array( $decoded ) ? $decoded : null;
+	}
+
+	/**
+	 * Describes an unusable reply for the error message and the log: how long it was,
+	 * and its start. An unclosed array is called out separately — a reply cut off
+	 * mid-generation means the provider was still writing when the timeout hit, which
+	 * needs a different fix (raise Command Timeout, or lower Sentence Chunk Size) from
+	 * a reply that simply isn't JSON.
+	 */
+	public static function describe_bad_response( string $text ): string {
+		if ( $text === '' ) {
+			return __( 'Nothing was returned at all.', 'splecheh' );
+		}
+
+		if ( strpos( $text, '[' ) !== false && strrpos( $text, ']' ) === false ) {
+			return sprintf(
+				/* translators: 1: byte count, 2: start of the response */
+				__( '%1$d bytes returned and the array is never closed, so the reply was cut off mid-generation — raise the Command Timeout or lower the Sentence Chunk Size. Starts: %2$s', 'splecheh' ),
+				strlen( $text ),
+				substr( $text, 0, 200 )
+			);
+		}
+
+		return sprintf(
+			/* translators: 1: byte count, 2: start of the response */
+			__( '%1$d bytes returned, starting: %2$s', 'splecheh' ),
+			strlen( $text ),
+			substr( $text, 0, 200 )
+		);
 	}
 }

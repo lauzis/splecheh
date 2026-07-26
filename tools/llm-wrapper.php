@@ -56,6 +56,67 @@ define( 'OLLAMA_MODEL_DEFAULT', getenv( 'SPLECHEH_OLLAMA_MODEL' ) ?: 'qwen2.5:7b
 // Overridable via SPLECHEH_OLLAMA_KEEP_ALIVE (Ollama duration syntax, e.g. "30m").
 define( 'OLLAMA_KEEP_ALIVE', getenv( 'SPLECHEH_OLLAMA_KEEP_ALIVE' ) ?: '10m' );
 
+/**
+ * Pulls the JSON array out of a model's reply.
+ *
+ * Models routinely wrap the array in a ```json fence, and sometimes introduce it
+ * with a sentence ("Here is the corrected JSON:") or add a closing remark. The old
+ * approach only stripped a fence anchored at the very start and end of the reply, so
+ * anything around it left the fence markers in place and the decode failed on output
+ * that was perfectly usable.
+ *
+ * @return array|null Decoded array, or null when there is no array to be had.
+ */
+function extract_json_array( string $text ): ?array {
+	$text = trim( $text );
+
+	// A fenced block anywhere in the reply: take what's inside it.
+	if ( preg_match( '/```(?:json)?\s*(.+?)\s*```/is', $text, $matches ) ) {
+		$text = trim( $matches[1] );
+	}
+
+	$decoded = json_decode( $text, true );
+	if ( is_array( $decoded ) ) {
+		return $decoded;
+	}
+
+	// Otherwise take the outermost [ … ] and try that, which drops any prose
+	// the model wrapped around the array.
+	$start = strpos( $text, '[' );
+	$end   = strrpos( $text, ']' );
+	if ( $start === false || $end === false || $end < $start ) {
+		return null;
+	}
+
+	$decoded = json_decode( substr( $text, $start, $end - $start + 1 ), true );
+
+	return is_array( $decoded ) ? $decoded : null;
+}
+
+/**
+ * Describes an unusable reply for the error message: how long it was, its start and
+ * its end. The tail matters — a reply cut off mid-sentence means the model was still
+ * generating when the timeout hit, which is a completely different fix (raise the
+ * timeout or lower the chunk size) from a reply that simply isn't JSON.
+ */
+function describe_bad_output( string $output ): string {
+	$length = strlen( $output );
+	$looks_truncated = strpos( $output, '[' ) !== false && strrpos( $output, ']' ) === false;
+
+	$description = sprintf( '%d bytes returned', $length );
+	if ( $looks_truncated ) {
+		$description .= '; the array is never closed, so the reply looks cut off mid-generation'
+			. ' — raise the timeout or lower the Sentence Chunk Size';
+	}
+
+	$description .= ' | starts: ' . substr( $output, 0, 300 );
+	if ( $length > 600 ) {
+		$description .= ' | ends: ' . substr( $output, -300 );
+	}
+
+	return $description;
+}
+
 function fail( string $message ): void {
 	fwrite( STDERR, $message . PHP_EOL );
 	exit( 1 );
@@ -342,12 +403,11 @@ switch ( $options['provider'] ) {
 		break;
 }
 
-$output = trim( $output );
-$output = (string) preg_replace( '/^```(?:json)?\s*|\s*```$/i', '', $output );
+$output  = trim( $output );
+$decoded = extract_json_array( $output );
 
-$decoded = json_decode( $output, true );
-if ( ! is_array( $decoded ) ) {
-	fail( "{$options['provider']} did not return valid JSON: " . substr( $output, 0, 500 ) );
+if ( $decoded === null ) {
+	fail( "{$options['provider']} did not return valid JSON: " . describe_bad_output( $output ) );
 }
 
 echo json_encode( $decoded );
