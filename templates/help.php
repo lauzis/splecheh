@@ -39,6 +39,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 	</p>
 
 	<p>
+		<?php esc_html_e( 'The Settings > Spell Check > "Double Spaces" option decides what happens to them: "Report as issues" (the default) lists them for review, "Fix automatically on every run" collapses them during each spell check without asking and notes the count in the auto-apply log, and "Don\'t check" skips them entirely. Fixing one row collapses every occurrence of that pair in the post, since identical pairs are listed once.', 'splecheh' ); ?>
+	</p>
+
+	<p>
 		<?php esc_html_e( 'Never flagged as whitespace issues: spacing inside <pre> and <code> blocks (where it is deliberate), shortcodes, HTML comments, tag attributes, and the indentation and line breaks of the block markup itself. "Fix everywhere" and "Ignore always" are not offered for these rows either — a stray double space is noise in one post, not a word worth adding to a language-wide list. "Ignore in post" works as usual.', 'splecheh' ); ?>
 	</p>
 

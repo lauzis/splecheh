@@ -32,16 +32,32 @@ class Splecheh_SpellCheckReport {
 			$errors = self::filter_term_ignored( $errors, $language );
 		}
 
-		// Whitespace issues are found in the raw content, not the plain text the
-		// spell checker sees — prepare_text() collapses the very runs we're looking
-		// for. Re-read the post so a content-rewriting auto-apply fix just above is
-		// reflected. Merged before the per-post ignore filter so "Ignore in post"
-		// works for these rows too.
-		$saved  = get_post( $post_id );
-		$errors = array_merge(
-			$errors,
-			self::find_whitespace_issues( $saved ? $saved->post_content : $post->post_content )
-		);
+		// Whitespace runs are handled on the raw content, not the plain text the spell
+		// checker sees — prepare_text() collapses the very runs in question. Re-read the
+		// post so a content-rewriting auto-apply fix just above is reflected.
+		$saved      = get_post( $post_id );
+		$raw        = $saved ? $saved->post_content : $post->post_content;
+		$whitespace = splecheh_whitespace_check_mode();
+
+		if ( $whitespace === self::WHITESPACE_FIX ) {
+			$collapsed = self::collapse_whitespace_runs( $raw );
+			if ( $collapsed['count'] > 0 ) {
+				wp_update_post(
+					[
+						'ID'           => $post_id,
+						'post_content' => $collapsed['content'],
+					]
+				);
+				Splecheh_Logs::addAutoApplyLog(
+					sprintf( 'Collapsed %d double space(s) in post %d', $collapsed['count'], $post_id ),
+					[ 'language' => $language ]
+				);
+			}
+		} elseif ( $whitespace === self::WHITESPACE_REPORT ) {
+			// Merged before the per-post ignore filter so "Ignore in post" works for
+			// these rows too.
+			$errors = array_merge( $errors, self::find_whitespace_issues( $raw ) );
+		}
 
 		$errors = self::filter_ignored_words( $post_id, $errors, $language );
 
@@ -59,6 +75,51 @@ class Splecheh_SpellCheckReport {
 		}
 
 		return $report;
+	}
+
+	/**
+	 * Values of the "Double Spaces" setting — see splecheh_whitespace_check_mode().
+	 * REPORT lists runs as reviewable issues, FIX collapses them during every run
+	 * without asking, OFF skips the check entirely.
+	 */
+	const WHITESPACE_REPORT = 'report';
+	const WHITESPACE_FIX    = 'fix';
+	const WHITESPACE_OFF    = 'off';
+
+	/**
+	 * Matches a run of two or more spaces/tabs sitting between two words, against the
+	 * masked content from mask_non_prose() — the NUL bytes it writes are what keep the
+	 * lookarounds from matching across markup. Kept in step with the pattern in
+	 * find_whitespace_issues(), which needs the surrounding words as well as the run.
+	 */
+	private const WHITESPACE_RUN_PATTERN = '/(?<=[^\s\x00])[ \t]{2,}(?=[^\s\x00])/u';
+
+	/**
+	 * Collapses every whitespace run in the visible text to a single space — the
+	 * "Fix automatically" mode, and always safe: HTML renders a run and a single space
+	 * identically, and everything where spacing is deliberate is masked out first.
+	 *
+	 * @return array{content: string, count: int} The rewritten content and how many runs were collapsed.
+	 */
+	public static function collapse_whitespace_runs( string $content ): array {
+		$masked = self::mask_non_prose( $content );
+
+		if ( preg_match_all( self::WHITESPACE_RUN_PATTERN, $masked, $matches, PREG_OFFSET_CAPTURE ) < 1 ) {
+			return [
+				'content' => $content,
+				'count'   => 0,
+			];
+		}
+
+		// Right to left, so each replacement leaves the earlier offsets valid.
+		foreach ( array_reverse( $matches[0] ) as $match ) {
+			$content = substr( $content, 0, $match[1] ) . ' ' . substr( $content, $match[1] + strlen( $match[0] ) );
+		}
+
+		return [
+			'content' => $content,
+			'count'   => count( $matches[0] ),
+		];
 	}
 
 	/**
@@ -647,25 +708,45 @@ class Splecheh_SpellCheckReport {
 	}
 
 	/**
-	 * Replaces the first literal occurrence of a flagged whitespace pair ("word  word")
-	 * with $replacement, or returns null if it isn't there any more.
+	 * Replaces every occurrence of a flagged whitespace pair ("word  word") with
+	 * $replacement, or returns null if the pair isn't in the content any more.
 	 *
-	 * Deliberately a literal search rather than replace_occurrence()'s \b…\b pattern:
-	 * the pair was sliced straight out of the raw content, and its edges are whatever
-	 * characters happened to sit around the whitespace run — quotes, brackets, digits —
-	 * which word boundaries can't anchor to.
+	 * Every occurrence, not just the first: identical pairs are reported as one row
+	 * (find_whitespace_issues() de-duplicates them, like spelling errors are de-duplicated
+	 * per word), so fixing only the first would leave the rest to reappear on the next
+	 * run with no row left to act on. Unlike a word replacement, collapsing whitespace is
+	 * always the same correct edit wherever it occurs.
+	 *
+	 * Deliberately a literal search rather than replace_occurrence()'s \b…\b pattern: the
+	 * pair was sliced straight out of the raw content, and its edges are whatever
+	 * characters happened to sit around the run — quotes, brackets, digits — which word
+	 * boundaries can't anchor to. Matched against the masked content so an identical pair
+	 * inside a <pre>/<code> block, a shortcode or a comment is left alone.
 	 */
 	public static function replace_whitespace_run( string $content, string $pair, string $replacement ): ?string {
 		if ( $pair === '' ) {
 			return null;
 		}
 
-		$pos = mb_strpos( $content, $pair );
-		if ( $pos === false ) {
+		$masked  = self::mask_non_prose( $content );
+		$offsets = [];
+		$offset  = 0;
+
+		while ( ( $pos = strpos( $masked, $pair, $offset ) ) !== false ) {
+			$offsets[] = $pos;
+			$offset    = $pos + strlen( $pair );
+		}
+
+		if ( empty( $offsets ) ) {
 			return null;
 		}
 
-		return mb_substr( $content, 0, $pos ) . $replacement . mb_substr( $content, $pos + mb_strlen( $pair ) );
+		// Right to left, so each replacement leaves the earlier offsets valid.
+		foreach ( array_reverse( $offsets ) as $pos ) {
+			$content = substr( $content, 0, $pos ) . $replacement . substr( $content, $pos + strlen( $pair ) );
+		}
+
+		return $content;
 	}
 
 	/**

@@ -119,15 +119,54 @@ final class WhitespaceIssuesTest extends TestCase {
 		$this->assertTrue( \Splecheh_SpellCheckReport::is_whitespace_error( [ 'type' => 'whitespace', 'word' => 'a  b' ] ) );
 	}
 
-	public function test_replace_whitespace_run_collapses_the_first_occurrence(): void {
+	/**
+	 * Identical pairs collapse into a single reported row, so one Fix has to clear all
+	 * of them — otherwise the leftovers reappear on the next run with no row to act on.
+	 */
+	public function test_replace_whitespace_run_collapses_every_occurrence(): void {
 		$this->assertSame(
-			'<p>Nepaguvāt uz Steam.</p><p>Nepaguvāt  uz Steam.</p>',
+			'<p>Nepaguvāt uz Steam.</p><p>Nepaguvāt uz Steam.</p>',
 			\Splecheh_SpellCheckReport::replace_whitespace_run(
 				'<p>Nepaguvāt  uz Steam.</p><p>Nepaguvāt  uz Steam.</p>',
 				'Nepaguvāt  uz',
 				'Nepaguvāt uz'
 			)
 		);
+	}
+
+	public function test_replace_whitespace_run_leaves_pre_blocks_alone(): void {
+		$this->assertSame(
+			'<pre>a  b</pre><p>a b</p>',
+			\Splecheh_SpellCheckReport::replace_whitespace_run( '<pre>a  b</pre><p>a  b</p>', 'a  b', 'a b' )
+		);
+	}
+
+	public function test_collapse_whitespace_runs_fixes_everything_at_once(): void {
+		$result = \Splecheh_SpellCheckReport::collapse_whitespace_runs(
+			"<p>one  two and   three</p>\n<p>four\t\tfive</p>"
+		);
+
+		$this->assertSame( "<p>one two and three</p>\n<p>four five</p>", $result['content'] );
+		$this->assertSame( 3, $result['count'] );
+	}
+
+	public function test_collapse_whitespace_runs_leaves_markup_and_code_untouched(): void {
+		$content = "<!-- wp:code -->\n<pre  class=\"a   b\">keep  this</pre>\n<!-- /wp:code -->\n<p>[sc  a=\"1\"] fix  this</p>";
+
+		$result = \Splecheh_SpellCheckReport::collapse_whitespace_runs( $content );
+
+		$this->assertSame( 1, $result['count'] );
+		$this->assertStringContainsString( 'keep  this', $result['content'] );
+		$this->assertStringContainsString( 'class="a   b"', $result['content'] );
+		$this->assertStringContainsString( '[sc  a="1"]', $result['content'] );
+		$this->assertStringContainsString( 'fix this', $result['content'] );
+	}
+
+	public function test_collapse_whitespace_runs_reports_nothing_to_do(): void {
+		$result = \Splecheh_SpellCheckReport::collapse_whitespace_runs( '<p>Already clean text.</p>' );
+
+		$this->assertSame( '<p>Already clean text.</p>', $result['content'] );
+		$this->assertSame( 0, $result['count'] );
 	}
 
 	public function test_replace_whitespace_run_returns_null_when_the_run_is_gone(): void {

@@ -129,6 +129,12 @@ if ( ! function_exists( 'splecheh_invalidate_on_version_change_enabled' ) ) {
 	}
 }
 
+if ( ! function_exists( 'splecheh_whitespace_check_mode' ) ) {
+	function splecheh_whitespace_check_mode(): string {
+		return $GLOBALS['__splecheh_test_options']['whitespace_check_mode'] ?? Splecheh_SpellCheckReport::WHITESPACE_REPORT;
+	}
+}
+
 if ( ! function_exists( 'metadata_exists' ) ) {
 	function metadata_exists( string $meta_type, int $object_id, string $meta_key ): bool {
 		return array_key_exists( $meta_key, $GLOBALS['__splecheh_test_post_meta'][ $object_id ] ?? [] );
