@@ -79,15 +79,52 @@ final class InterpunctionApplyFixTest extends TestCase {
 	}
 
 	/**
-	 * Inline markup inside the sentence is deliberately not matched — writing plain
-	 * text back over it would destroy the formatting — so it must be reported as
-	 * unapplied rather than silently skipped.
+	 * Inline markup inside the sentence is edited around, not written over: the sentence
+	 * exists in the rendered text but never as one string in the source.
 	 */
-	public function test_returns_null_when_inline_markup_splits_the_sentence(): void {
+	public function test_applies_around_inline_markup(): void {
 		$content = '<p>This is <strong>very</strong> important ,he said.</p>';
 
-		$this->assertNull(
+		$this->assertSame(
+			'<p>This is <strong>very</strong> important, he said.</p>',
 			\Splecheh_InterpunctionReport::apply_fix( $content, 'This is very important ,he said.', 'This is very important, he said.' )
+		);
+	}
+
+	/**
+	 * A tag can split a word in half — "old</a>," — which word-level matching cannot
+	 * handle, so the sentence is located character by character.
+	 */
+	public function test_applies_when_a_tag_splits_a_word(): void {
+		$content = '<p>suitable for <a href="/tag/six-years-old/">six years old</a>, kids</p>';
+
+		$this->assertSame(
+			'<p>Suitable for <a href="/tag/six-years-old/">six years old</a>, kids.</p>',
+			\Splecheh_InterpunctionReport::apply_fix( $content, 'suitable for six years old, kids', 'Suitable for six years old, kids.' )
+		);
+	}
+
+	/**
+	 * The word "six" appears in the link target before it appears in the visible text —
+	 * a naive search-and-replace would rewrite the URL.
+	 */
+	public function test_never_edits_inside_a_tag(): void {
+		$content = '<p>for <a href="/tag/six-years-old/" title="six years old">six years old</a> kids</p>';
+
+		$result = \Splecheh_InterpunctionReport::apply_fix( $content, 'for six years old kids', 'For six years old kids.' );
+
+		$this->assertStringContainsString( 'href="/tag/six-years-old/" title="six years old"', $result );
+		$this->assertStringContainsString( '<p>For ', $result );
+		$this->assertStringContainsString( 'kids.</p>', $result );
+	}
+
+	public function test_gives_up_rather_than_guess_when_the_sentence_is_absent(): void {
+		$this->assertNull(
+			\Splecheh_InterpunctionReport::apply_fix(
+				'<p>Something <em>entirely</em> different here.</p>',
+				'This is very important ,he said.',
+				'This is very important, he said.'
+			)
 		);
 	}
 

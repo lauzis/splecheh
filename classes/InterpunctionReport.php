@@ -403,9 +403,10 @@ class Splecheh_InterpunctionReport {
 	 * the sentence is therefore matched as \s+ against the raw content. The replacement
 	 * text is inserted verbatim (which also normalizes the whitespace it replaces).
 	 *
-	 * Still unmatched, by design: a sentence broken up by inline markup (<strong>, <a>)
-	 * or containing HTML entities, since writing plain text back over markup would
-	 * destroy it. Those are reported to the caller as not applied.
+	 * A sentence broken up by inline markup (<strong>, <a>) is handled by a third stage,
+	 * apply_fix_within_markup(), which edits the words in place instead of writing plain
+	 * text over the tags. Anything that still can't be placed is reported to the caller
+	 * as not applied rather than silently dropped.
 	 */
 	public static function apply_fix( string $content, string $original, string $fixed ): ?string {
 		$original = trim( $original );
@@ -424,14 +425,175 @@ class Splecheh_InterpunctionReport {
 		}
 
 		$pattern = '/' . implode( '\s+', array_map( static fn( string $word ): string => preg_quote( $word, '/' ), $words ) ) . '/iu';
-		if ( preg_match( $pattern, $content, $matches, PREG_OFFSET_CAPTURE ) !== 1 ) {
+
+		if ( preg_match( $pattern, $content, $matches, PREG_OFFSET_CAPTURE ) === 1 ) {
+			// preg_match offsets are byte offsets — pair them with substr(), not mb_substr().
+			$offset = $matches[0][1];
+
+			return substr( $content, 0, $offset ) . $fixed . substr( $content, $offset + strlen( $matches[0][0] ) );
+		}
+
+		return self::apply_fix_within_markup( $content, $words, $original, $fixed );
+	}
+
+	/**
+	 * Applies a fix to a sentence that inline markup runs through — a link, <strong>,
+	 * <em> — where the sentence exists in the rendered text but never as one string in
+	 * the source, so the plain searches above can't find it.
+	 *
+	 * Writing the fixed sentence over the whole region would delete the markup, so the
+	 * region's text is rewritten around the tags instead. Tags can interrupt the sentence
+	 * anywhere, including in the middle of a word — `six years old</a>, kids` splits the
+	 * token "old," in half — so the region is located character by character, allowing
+	 * tags between any two characters.
+	 *
+	 * The fixed text is then distributed back over the text runs by aligning it with the
+	 * original (LCS), which decides where each run's slice of the new text ends. That
+	 * keeps a comma the model added outside the </a> it was typed after, rather than
+	 * pushing it into the link.
+	 *
+	 * @param string[] $words The original sentence's words, already split on whitespace.
+	 */
+	private static function apply_fix_within_markup( string $content, array $words, string $original, string $fixed ): ?string {
+		// The alignment below is O(n×m); a sentence is short, but don't let a pathological
+		// "sentence" from a malformed report turn a page load into a minute of DP.
+		if ( strlen( $original ) > 2000 || strlen( $fixed ) > 2000 ) {
 			return null;
 		}
 
-		// preg_match offsets are byte offsets — pair them with substr(), not mb_substr().
-		$offset = $matches[0][1];
+		$pattern = self::markup_tolerant_pattern( $words );
+		if ( $pattern === null || preg_match( $pattern, $content, $matches, PREG_OFFSET_CAPTURE ) !== 1 ) {
+			return null;
+		}
 
-		return substr( $content, 0, $offset ) . $fixed . substr( $content, $offset + strlen( $matches[0][0] ) );
+		$start    = $matches[0][1];
+		$region   = $matches[0][0];
+		$segments = preg_split( '/(<[^>]*>)/', $region, -1, PREG_SPLIT_DELIM_CAPTURE );
+
+		// The visible text of the region, and where each text run starts and ends in it.
+		$plain  = '';
+		$spans  = [];
+		foreach ( $segments as $index => $segment ) {
+			if ( $segment === '' || strncmp( $segment, '<', 1 ) === 0 ) {
+				continue;
+			}
+			$spans[ $index ] = [ strlen( $plain ), strlen( $segment ) ];
+			$plain          .= $segment;
+		}
+
+		if ( $plain === '' ) {
+			return null;
+		}
+
+		$map = self::align_positions( $plain, $fixed );
+
+		foreach ( $spans as $index => $span ) {
+			[ $offset, $length ] = $span;
+			$from                = $map[ $offset ];
+			$to                  = $map[ $offset + $length ];
+			$segments[ $index ]  = substr( $fixed, $from, $to - $from );
+		}
+
+		$candidate = substr( $content, 0, $start ) . implode( '', $segments ) . substr( $content, $start + strlen( $region ) );
+
+		// Two guards, because the alternative to catching a bad edit here is finding it
+		// in a published post: every tag must have survived byte-for-byte, and the text
+		// that replaced the region must add up to exactly the fixed sentence.
+		if ( ! self::markup_survived( $content, $candidate ) ) {
+			return null;
+		}
+
+		$rewritten = '';
+		foreach ( $spans as $index => $span ) {
+			$rewritten .= $segments[ $index ];
+		}
+
+		return $rewritten === $fixed ? $candidate : null;
+	}
+
+	/**
+	 * Builds a pattern matching the sentence in raw HTML with tags allowed between any
+	 * two characters, and any whitespace run matching any run of whitespace and tags.
+	 *
+	 * @param string[] $words
+	 */
+	private static function markup_tolerant_pattern( array $words ): ?string {
+		if ( empty( $words ) ) {
+			return null;
+		}
+
+		$tags  = '(?:<[^>]*>)*';
+		$parts = [];
+
+		foreach ( $words as $word ) {
+			$characters = preg_split( '//u', $word, -1, PREG_SPLIT_NO_EMPTY );
+			if ( $characters === false || $characters === [] ) {
+				return null;
+			}
+
+			$parts[] = implode( $tags, array_map( static fn( string $character ): string => preg_quote( $character, '/' ), $characters ) );
+		}
+
+		// Between words: whitespace and tags in any order, at least one whitespace.
+		return '/' . implode( $tags . '\s(?:\s|<[^>]*>)*', $parts ) . '/iu';
+	}
+
+	/**
+	 * Aligns two nearly-identical strings and returns, for every byte offset in $from
+	 * (including the end), the matching offset in $to. Longest-common-subsequence based,
+	 * so an inserted comma or a capitalised letter shifts the offsets after it without
+	 * dragging the rest of the mapping out of place.
+	 *
+	 * @return int[] Offsets into $to, indexed by offset into $from.
+	 */
+	private static function align_positions( string $from, string $to ): array {
+		$n = strlen( $from );
+		$m = strlen( $to );
+
+		$lcs = array_fill( 0, $n + 1, array_fill( 0, $m + 1, 0 ) );
+		for ( $i = $n - 1; $i >= 0; $i-- ) {
+			for ( $j = $m - 1; $j >= 0; $j-- ) {
+				$lcs[ $i ][ $j ] = strcasecmp( $from[ $i ], $to[ $j ] ) === 0
+					? $lcs[ $i + 1 ][ $j + 1 ] + 1
+					: max( $lcs[ $i + 1 ][ $j ], $lcs[ $i ][ $j + 1 ] );
+			}
+		}
+
+		$map = [];
+		$i   = 0;
+		$j   = 0;
+
+		while ( $i < $n && $j < $m ) {
+			$map[ $i ] = $j;
+
+			if ( strcasecmp( $from[ $i ], $to[ $j ] ) === 0 ) {
+				$i++;
+				$j++;
+			} elseif ( $lcs[ $i + 1 ][ $j ] >= $lcs[ $i ][ $j + 1 ] ) {
+				$i++; // Character dropped by the fix.
+			} else {
+				$j++; // Character added by the fix.
+			}
+		}
+
+		// Anything left over on either side maps to the end, so the slices still add up.
+		while ( $i <= $n ) {
+			$map[ $i ] = $m;
+			$i++;
+		}
+
+		return $map;
+	}
+
+	/**
+	 * Guards the in-place edit above: the rewrite must not have added, removed or altered
+	 * a single tag.
+	 */
+	private static function markup_survived( string $before, string $after ): bool {
+		preg_match_all( '/<[^>]*>/', $before, $before_tags );
+		preg_match_all( '/<[^>]*>/', $after, $after_tags );
+
+		return $before_tags[0] === $after_tags[0];
 	}
 
 	/**
