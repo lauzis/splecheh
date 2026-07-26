@@ -3,7 +3,7 @@
  * Plugin Name: Splecheh - WordPress spellcheck plugin
  * Plugin URI:  https://github.com/lauzis/splecheh
  * Description: Run spell check on all articles and post types to find spelling errors.
- * Version:     0.27.0
+ * Version:     0.28.0
  * Author:      Aivars Lauzis
  * Text Domain: splecheh
  * License:     MIT
@@ -14,7 +14,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'SPLECHEH_VERSION', '0.27.0' );
+define( 'SPLECHEH_VERSION', '0.28.0' );
 define( 'SPLECHEH_DIR', plugin_dir_path( __FILE__ ) );
 define( 'SPLECHEH_LOG_PATH', SPLECHEH_DIR . 'logs' );
 define( 'SPLECHEH_PLUGIN_FILE', __FILE__ );
@@ -28,7 +28,6 @@ require_once SPLECHEH_DIR . 'classes/TermIgnoreList.php';
 require_once SPLECHEH_DIR . 'classes/ContentSplitter.php';
 require_once SPLECHEH_DIR . 'classes/SpellCheckReport.php';
 require_once SPLECHEH_DIR . 'classes/SplechehCron.php';
-require_once SPLECHEH_DIR . 'classes/InterpunctionIgnoreList.php';
 require_once SPLECHEH_DIR . 'classes/InterpunctionBackend.php';
 require_once SPLECHEH_DIR . 'classes/InterpunctionReport.php';
 require_once SPLECHEH_DIR . 'classes/InterpunctionCron.php';
@@ -110,7 +109,6 @@ add_action( 'wp_ajax_splecheh_interpunction_bulk_run', 'splecheh_ajax_interpunct
 add_action( 'wp_ajax_splecheh_interpunction_details_rerun', 'splecheh_ajax_interpunction_details_rerun' );
 add_action( 'wp_ajax_splecheh_interpunction_fix', 'splecheh_ajax_interpunction_fix' );
 add_action( 'wp_ajax_splecheh_interpunction_ignore_in_post', 'splecheh_ajax_interpunction_ignore_in_post' );
-add_action( 'wp_ajax_splecheh_interpunction_ignore_always', 'splecheh_ajax_interpunction_ignore_always' );
 add_action( 'wp_ajax_splecheh_interpunction_mark_complete', 'splecheh_ajax_interpunction_mark_complete' );
 add_action( 'wp_ajax_splecheh_interpunction_test', 'splecheh_ajax_interpunction_test' );
 add_action( 'wp_ajax_splecheh_interpunction_test_search_posts', 'splecheh_ajax_interpunction_test_search_posts' );
@@ -391,6 +389,19 @@ function splecheh_register_settings_fields(): void {
 					->set_default_value( (string) Splecheh_InterpunctionBackend::DEFAULT_CHUNK_SIZE )
 					->set_help_text( __( 'A post\'s sentences are sent to the provider this many at a time per call, not all at once — a real post can have far more sentences than a quick test, and a single call for dozens of sentences can take too long to finish before it times out (especially for a local model or a long post). Lower this if calls still time out; raise it to use fewer, larger calls if your provider handles it comfortably. Set to 0 to disable chunking (send everything in one call). Default: 5.', 'splecheh' ) ),
 
+				\Carbon_Fields\Field::make( 'text', 'splecheh_interpunction_command_timeout', __( 'Command Timeout (seconds)', 'splecheh' ) )
+					->set_default_value( (string) Splecheh_InterpunctionBackend::DEFAULT_COMMAND_TIMEOUT )
+					->set_help_text( __( 'How long a single Commandline call may take before it is killed and reported as an error. Raise this if a chunk legitimately needs longer than the default — but note that a browser-triggered "Run Now" is also bound by the server\'s own limits (PHP max_execution_time, PHP-FPM request_terminate_timeout, the web server\'s proxy/FastCGI read timeout), which must all exceed this value for a longer timeout to have any effect. Lowering the Sentence Chunk Size above is usually the better fix for timeouts. When the command runs the bundled tools/llm-wrapper.php, the wrapper is automatically given this value minus 5 seconds unless the command already sets its own --timeout. Default: 60.', 'splecheh' ) )
+					->set_conditional_logic(
+						[
+							[
+								'field'   => 'splecheh_interpunction_type',
+								'value'   => 'commandline',
+								'compare' => '=',
+							],
+						]
+					),
+
 				\Carbon_Fields\Field::make( 'html', 'splecheh_interpunction_test' )
 					->set_html( 'splecheh_render_interpunction_test_field' ),
 			]
@@ -613,9 +624,13 @@ function splecheh_register_dashboard_widget(): void {
 		return;
 	}
 
+	// Same widget id either way, so a user's dashboard layout survives toggling the
+	// Interpunction Check setting — only the title follows what's actually inside.
 	wp_add_dashboard_widget(
 		'splecheh_dashboard_widget',
-		__( 'Splecheh Spell Check', 'splecheh' ),
+		splecheh_interpunction_enabled()
+			? __( 'Splecheh Checks', 'splecheh' )
+			: __( 'Splecheh Spell Check', 'splecheh' ),
 		'splecheh_render_dashboard_widget'
 	);
 }
@@ -723,6 +738,7 @@ function splecheh_enqueue_details_assets(): void {
 					? sprintf( __( 'Fix everywhere in %s', 'splecheh' ), strtoupper( $language ) )
 					: __( 'Fix everywhere', 'splecheh' ),
 				'markedComplete' => __( 'Marked as complete — all remaining issues resolved.', 'splecheh' ),
+				'fixNotApplied'  => __( 'fix(es) could NOT be written into the post and are left unresolved — the text no longer matches the post content. Re-run the Spell Check for this post and try again.', 'splecheh' ),
 			],
 		]
 	);
@@ -864,8 +880,10 @@ function splecheh_enqueue_interpunction_details_assets(): void {
 				'issuesFound'   => __( 'interpunction issue(s) found.', 'splecheh' ),
 				'fix'           => __( 'Fix', 'splecheh' ),
 				'ignoreInPost'  => __( 'Ignore in post', 'splecheh' ),
-				'ignoreAlways'  => __( 'Ignore always', 'splecheh' ),
 				'markedComplete' => __( 'Marked as complete — all remaining issues resolved.', 'splecheh' ),
+				'fixNotApplied' => __( 'fix(es) could NOT be written into the post and are left unresolved — the sentence no longer matches the post content (edited since the check, or split up by inline formatting). Re-run the Interpunction Check for this post and try again, or edit the sentence by hand.', 'splecheh' ),
+				'spellcheckIssues' => __( 'spelling issue(s) found by the follow-up Spell Check — resolve them before running Interpunction Check again.', 'splecheh' ),
+				'spellcheckFailed' => __( 'The follow-up Spell Check could not be run:', 'splecheh' ),
 			],
 		]
 	);
@@ -1112,8 +1130,9 @@ function splecheh_ajax_fix_word(): void {
 		wp_send_json_error( __( 'Post not found.', 'splecheh' ), 404 );
 	}
 
-	$content = $post->post_content;
-	$fixed   = 0;
+	$content   = $post->post_content;
+	$applied   = [];
+	$unapplied = [];
 
 	foreach ( $items as $item ) {
 		$index       = isset( $item['index'] ) ? absint( $item['index'] ) : -1;
@@ -1124,20 +1143,53 @@ function splecheh_ajax_fix_word(): void {
 		}
 
 		$error   = $report['errors'][ $index ];
-		$content = Splecheh_SpellCheckReport::replace_occurrence( $content, $error['word'], $error['excerpt'], $replacement );
+		$updated = Splecheh_SpellCheckReport::is_whitespace_error( $error )
+			? Splecheh_SpellCheckReport::replace_whitespace_run( $content, $error['word'], $replacement )
+			: Splecheh_SpellCheckReport::replace_occurrence( $content, $error['word'], $error['excerpt'], $replacement );
 
-		$report['errors'][ $index ]['resolved']  = true;
-		$report['errors'][ $index ]['fixed_to']  = $replacement;
-		$fixed++;
+		// Not in the content any more (post edited since the check) — leave the issue
+		// open and report it, rather than marking a fix that never reached the post.
+		if ( $updated === null ) {
+			$unapplied[] = $index;
+			Splecheh_Logs::addLog(
+				'spellcheck',
+				"Fix not applied in post {$post_id}: text no longer found in the content",
+				[ 'word' => $error['word'] ]
+			);
+			continue;
+		}
+
+		$content           = $updated;
+		$applied[ $index ] = $replacement;
 	}
 
-	if ( $fixed > 0 ) {
+	if ( ! empty( $applied ) ) {
 		wp_update_post(
 			[
 				'ID'           => $post_id,
 				'post_content' => $content,
 			]
 		);
+
+		foreach ( Splecheh_SpellCheckReport::find_unapplied_fixes( $post_id, $applied ) as $index ) {
+			unset( $applied[ $index ] );
+			$unapplied[] = $index;
+			Splecheh_Logs::addLog(
+				'spellcheck',
+				"Fix did not survive saving post {$post_id}: text missing from the stored content",
+				[ 'index' => $index ]
+			);
+		}
+	}
+
+	foreach ( $applied as $index => $replacement ) {
+		$report['errors'][ $index ]['resolved'] = true;
+		$report['errors'][ $index ]['fixed_to'] = $replacement;
+	}
+
+	$fixed = count( $applied );
+
+	if ( $fixed > 0 ) {
 		Splecheh_SpellCheckReport::update_report( $post_id, $report );
 		Splecheh_Logs::addLog( 'spellcheck', "Fixed {$fixed} word(s) in post {$post_id}", [] );
 	}
@@ -1145,6 +1197,7 @@ function splecheh_ajax_fix_word(): void {
 	wp_send_json_success(
 		[
 			'fixed'            => $fixed,
+			'unapplied'        => array_values( $unapplied ),
 			'unresolved_count' => Splecheh_SpellCheckReport::count_unresolved( $post_id ),
 		]
 	);
@@ -1184,6 +1237,13 @@ function splecheh_ajax_fix_everywhere(): void {
 		}
 
 		$error = $report['errors'][ $index ];
+
+		// A whitespace run is source noise in this one post — there is no word pair
+		// worth teaching the auto-apply list. The Details page hides the button for
+		// these rows; this guards the bulk action and any hand-made request.
+		if ( Splecheh_SpellCheckReport::is_whitespace_error( $error ) ) {
+			continue;
+		}
 
 		Splecheh_AutoApplyList::add_pair( $language, $error['word'], $replacement );
 		$content = Splecheh_SpellCheckReport::replace_all_occurrences( $content, $error['word'], $replacement );
@@ -1273,6 +1333,12 @@ function splecheh_ajax_ignore_always(): void {
 	foreach ( $indices as $index ) {
 		$index = absint( $index );
 		if ( ! isset( $report['errors'][ $index ] ) || ! empty( $report['errors'][ $index ]['resolved'] ) ) {
+			continue;
+		}
+
+		// Same reasoning as "Fix everywhere": a whitespace run is not a word that
+		// could be ignored language-wide.
+		if ( Splecheh_SpellCheckReport::is_whitespace_error( $report['errors'][ $index ] ) ) {
 			continue;
 		}
 
@@ -1699,6 +1765,40 @@ function splecheh_get_interpunction_details_request_context(): ?array {
 	return [ $post_id, $report ];
 }
 
+/**
+ * Re-runs Spell Check for a post right after an interpunction fix was written into it.
+ *
+ * Writing the fix bumps post_modified_gmt, which makes the post's saved Spell Check
+ * "Outdated" — and with "Require Spell Check First" on, that blocks the post from any
+ * further Interpunction Check until someone re-runs Spell Check by hand. Re-running it
+ * here clears that, and doubles as a verification that the sentence we just rewrote
+ * didn't introduce a spelling error of its own: if it did, the post stays blocked,
+ * which is the correct outcome.
+ *
+ * Only posts that already have a Spell Check report are refreshed — for a post that was
+ * never spell-checked there is nothing to keep up to date.
+ *
+ * @return array{ran: bool, issues: int, error: string}
+ */
+function splecheh_refresh_spellcheck_after_interpunction_fix( int $post_id ): array {
+	$summary = [ 'ran' => false, 'issues' => 0, 'error' => '' ];
+
+	if ( ! get_post_meta( $post_id, '_splecheh_checked_at', true ) ) {
+		return $summary;
+	}
+
+	$result = splecheh_run_spellcheck_for_post( $post_id );
+	if ( is_wp_error( $result ) ) {
+		$summary['error'] = $result->get_error_message();
+		return $summary;
+	}
+
+	$summary['ran']    = true;
+	$summary['issues'] = count( $result['errors'] );
+
+	return $summary;
+}
+
 function splecheh_ajax_interpunction_fix(): void {
 	check_ajax_referer( 'splecheh_interpunction_details', 'nonce' );
 
@@ -1714,8 +1814,10 @@ function splecheh_ajax_interpunction_fix(): void {
 		wp_send_json_error( __( 'Post not found.', 'splecheh' ), 404 );
 	}
 
-	$content = $post->post_content;
-	$fixed   = 0;
+	$content    = $post->post_content;
+	$applied    = [];
+	$unapplied  = [];
+	$spellcheck = [ 'ran' => false, 'issues' => 0, 'error' => '' ];
 
 	foreach ( $items as $item ) {
 		$index      = isset( $item['index'] ) ? absint( $item['index'] ) : -1;
@@ -1726,28 +1828,67 @@ function splecheh_ajax_interpunction_fix(): void {
 		}
 
 		$issue   = $report['issues'][ $index ];
-		$content = Splecheh_InterpunctionReport::apply_fix( $content, $issue['original'], $fixed_text );
+		$updated = Splecheh_InterpunctionReport::apply_fix( $content, $issue['original'], $fixed_text );
 
-		$report['issues'][ $index ]['resolved'] = true;
-		$report['issues'][ $index ]['fixed']    = $fixed_text;
-		$fixed++;
+		// The sentence isn't in the content any more (edited since the check, or broken
+		// up by inline markup). Leave the issue unresolved and tell the user, rather
+		// than reporting a fix that never reached the post.
+		if ( $updated === null ) {
+			$unapplied[] = $index;
+			Splecheh_Logs::addLog(
+				'interpunction',
+				"Fix not applied in post {$post_id}: sentence no longer found in the content",
+				[ 'original' => $issue['original'] ]
+			);
+			continue;
+		}
+
+		$content           = $updated;
+		$applied[ $index ] = $fixed_text;
 	}
 
-	if ( $fixed > 0 ) {
+	if ( ! empty( $applied ) ) {
 		wp_update_post(
 			[
 				'ID'           => $post_id,
 				'post_content' => $content,
 			]
 		);
+
+		// Trust the saved post, not our own string replacement: re-read and re-split it
+		// and drop anything that didn't survive the write (kses, another plugin's
+		// content filter), so a report never claims a fix the post doesn't have.
+		foreach ( Splecheh_SpellCheckReport::find_unapplied_fixes( $post_id, $applied ) as $index ) {
+			unset( $applied[ $index ] );
+			$unapplied[] = $index;
+			Splecheh_Logs::addLog(
+				'interpunction',
+				"Fix did not survive saving post {$post_id}: text missing from the stored content",
+				[ 'index' => $index ]
+			);
+		}
+	}
+
+	foreach ( $applied as $index => $fixed_text ) {
+		$report['issues'][ $index ]['resolved'] = true;
+		$report['issues'][ $index ]['fixed']    = $fixed_text;
+	}
+
+	$fixed = count( $applied );
+
+	if ( $fixed > 0 ) {
 		Splecheh_InterpunctionReport::update_report( $post_id, $report );
 		Splecheh_Logs::addLog( 'interpunction', "Fixed {$fixed} sentence(s) in post {$post_id}", [] );
+
+		$spellcheck = splecheh_refresh_spellcheck_after_interpunction_fix( $post_id );
 	}
 
 	wp_send_json_success(
 		[
 			'fixed'            => $fixed,
+			'unapplied'        => array_values( $unapplied ),
 			'unresolved_count' => Splecheh_InterpunctionReport::count_unresolved( $post_id ),
+			'spellcheck'       => $spellcheck,
 		]
 	);
 }
@@ -1781,42 +1922,6 @@ function splecheh_ajax_interpunction_ignore_in_post(): void {
 
 	if ( $count > 0 ) {
 		update_post_meta( $post_id, '_splecheh_interpunction_ignored_sentences', $ignored_sentences );
-		Splecheh_InterpunctionReport::update_report( $post_id, $report );
-	}
-
-	wp_send_json_success(
-		[
-			'ignored'          => $count,
-			'unresolved_count' => Splecheh_InterpunctionReport::count_unresolved( $post_id ),
-		]
-	);
-}
-
-function splecheh_ajax_interpunction_ignore_always(): void {
-	check_ajax_referer( 'splecheh_interpunction_details', 'nonce' );
-
-	[ $post_id, $report ] = splecheh_get_interpunction_details_request_context();
-
-	$indices = isset( $_POST['indices'] ) ? json_decode( wp_unslash( $_POST['indices'] ), true ) : null;
-	if ( ! is_array( $indices ) || empty( $indices ) ) {
-		wp_send_json_error( __( 'Invalid request.', 'splecheh' ), 400 );
-	}
-
-	$language = splecheh_get_language_code( $post_id );
-	$count    = 0;
-
-	foreach ( $indices as $index ) {
-		$index = absint( $index );
-		if ( ! isset( $report['issues'][ $index ] ) || ! empty( $report['issues'][ $index ]['resolved'] ) ) {
-			continue;
-		}
-
-		Splecheh_InterpunctionIgnoreList::add_sentence( $language, $report['issues'][ $index ]['original'] );
-		$report['issues'][ $index ]['resolved'] = true;
-		$count++;
-	}
-
-	if ( $count > 0 ) {
 		Splecheh_InterpunctionReport::update_report( $post_id, $report );
 	}
 

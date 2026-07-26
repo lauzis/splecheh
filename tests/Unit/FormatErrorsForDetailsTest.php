@@ -23,6 +23,9 @@ final class FormatErrorsForDetailsTest extends TestCase {
 			[
 				[
 					'word'            => 'bolld',
+					'wordHtml'        => 'bolld',
+					'typeHtml'        => '<span class="splecheh-badge">spelling</span>',
+					'isWhitespace'    => false,
 					'excerpt'         => 'This has a <strong>bolld</strong> typo in it.',
 					'suggestion'      => 'bold',
 					'suggestionsHtml' => 'bold, b<strong>a</strong>ld',
@@ -31,6 +34,25 @@ final class FormatErrorsForDetailsTest extends TestCase {
 			],
 			$result
 		);
+	}
+
+	public function test_maps_a_whitespace_entry_with_visible_markers(): void {
+		$errors = [
+			[
+				'type'        => 'whitespace',
+				'word'        => 'double  space',
+				'excerpt'     => 'A double  space in the source.',
+				'suggestions' => [ 'double space' ],
+			],
+		];
+
+		$result = \Splecheh_SpellCheckReport::format_errors_for_details( $errors );
+
+		$this->assertTrue( $result[0]['isWhitespace'] );
+		$this->assertSame( '<span class="splecheh-badge splecheh-badge--outdated">whitespace</span>', $result[0]['typeHtml'] );
+		$this->assertSame( 'double<span class="splecheh-whitespace-marker">␣␣</span>space', $result[0]['wordHtml'] );
+		$this->assertSame( 'A double<span class="splecheh-whitespace-marker">␣␣</span>space in the source.', $result[0]['excerpt'] );
+		$this->assertSame( 'double space', $result[0]['suggestion'] );
 	}
 
 	public function test_marks_resolved_flag_and_defaults_missing_suggestion(): void {

@@ -74,7 +74,6 @@ $issues = $report['issues'] ?? [];
 					<option value=""><?php esc_html_e( 'Bulk actions', 'splecheh' ); ?></option>
 					<option value="fix"><?php esc_html_e( 'Fix', 'splecheh' ); ?></option>
 					<option value="ignore_in_post"><?php esc_html_e( 'Ignore in post', 'splecheh' ); ?></option>
-					<option value="ignore_always"><?php esc_html_e( 'Ignore always', 'splecheh' ); ?></option>
 				</select>
 				<button class="button" id="splecheh-interpunction-bulk-apply"><?php esc_html_e( 'Apply', 'splecheh' ); ?></button>
 			</div>
@@ -116,7 +115,6 @@ $issues = $report['issues'] ?? [];
 						<?php else : ?>
 							<button class="button button-primary button-small splecheh-fix"><?php esc_html_e( 'Fix', 'splecheh' ); ?></button>
 							<button class="button button-small splecheh-ignore-post"><?php esc_html_e( 'Ignore in post', 'splecheh' ); ?></button>
-							<button class="button button-small splecheh-ignore-always"><?php esc_html_e( 'Ignore always', 'splecheh' ); ?></button>
 						<?php endif; ?>
 					</td>
 				</tr>

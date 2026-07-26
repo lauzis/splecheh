@@ -29,9 +29,21 @@ class Splecheh_SpellCheckReport {
 				return $errors;
 			}
 			$errors = self::apply_auto_fixes( $post, $errors, $language );
-			$errors = self::filter_ignored_words( $post_id, $errors, $language );
 			$errors = self::filter_term_ignored( $errors, $language );
 		}
+
+		// Whitespace issues are found in the raw content, not the plain text the
+		// spell checker sees — prepare_text() collapses the very runs we're looking
+		// for. Re-read the post so a content-rewriting auto-apply fix just above is
+		// reflected. Merged before the per-post ignore filter so "Ignore in post"
+		// works for these rows too.
+		$saved  = get_post( $post_id );
+		$errors = array_merge(
+			$errors,
+			self::find_whitespace_issues( $saved ? $saved->post_content : $post->post_content )
+		);
+
+		$errors = self::filter_ignored_words( $post_id, $errors, $language );
 
 		$report = [
 			'post_id'    => $post_id,
@@ -47,6 +59,158 @@ class Splecheh_SpellCheckReport {
 		}
 
 		return $report;
+	}
+
+	/**
+	 * Finds runs of two or more spaces/tabs between two words in the post's visible
+	 * text, reported as `type => 'whitespace'` error entries alongside the spelling
+	 * ones. HTML collapses whitespace runs when rendering, so these are invisible to
+	 * readers but still noise in the source — and they also break Interpunction
+	 * Check's sentence matching, since the splitter normalizes them away.
+	 *
+	 * Runs on the raw content (prepare_text() would have collapsed them already), with
+	 * everything that isn't visible prose masked out first — tags and their attributes,
+	 * HTML comments (which carry the block delimiters), shortcodes, and <pre>/<code>
+	 * blocks, where spacing is deliberate. Only runs sitting *between* two words on the
+	 * same line count, so markup indentation and blank lines are never flagged.
+	 *
+	 * Each distinct word pair is reported once, matching how spelling errors are
+	 * de-duplicated per word.
+	 *
+	 * @return array[] Error entries in the same shape as the spelling ones.
+	 */
+	public static function find_whitespace_issues( string $content ): array {
+		$masked = self::mask_non_prose( $content );
+
+		if ( preg_match_all( '/[^\s\x00]+[ \t]{2,}[^\s\x00]+/u', $masked, $matches, PREG_OFFSET_CAPTURE ) < 1 ) {
+			return [];
+		}
+
+		$issues = [];
+		$seen   = [];
+
+		foreach ( $matches[0] as $match ) {
+			// Offsets come from the mask, which is byte-for-byte aligned with $content.
+			$pair = substr( $content, $match[1], strlen( $match[0] ) );
+			$key  = mb_strtolower( $pair );
+
+			if ( isset( $seen[ $key ] ) ) {
+				continue;
+			}
+			$seen[ $key ] = true;
+
+			$issues[] = [
+				'type'        => 'whitespace',
+				'word'        => $pair,
+				'suggestions' => [ (string) preg_replace( '/[ \t]{2,}/u', ' ', $pair ) ],
+				'excerpt'     => self::whitespace_excerpt( $content, $match[1], strlen( $match[0] ) ),
+			];
+		}
+
+		return $issues;
+	}
+
+	/**
+	 * Replaces everything that isn't visible prose with NUL bytes, preserving length
+	 * (and therefore every offset) so a match in the mask can be sliced straight out of
+	 * the original content.
+	 */
+	private static function mask_non_prose( string $content ): string {
+		$patterns = [
+			'#<(pre|code)\b[^>]*>.*?</\1>#is', // Deliberate spacing — never flagged.
+			'#<!--.*?-->#s',                   // Block delimiters and other comments.
+			'#<[^>]*>#s',                      // Tags, with their attribute whitespace.
+			'#\[[^\]\[]*\]#s',                 // Shortcodes.
+		];
+
+		foreach ( $patterns as $pattern ) {
+			$content = (string) preg_replace_callback(
+				$pattern,
+				static function ( array $match ): string {
+					return str_repeat( "\x00", strlen( $match[0] ) );
+				},
+				$content
+			);
+		}
+
+		return $content;
+	}
+
+	/**
+	 * Builds a readable, tag-free excerpt around a whitespace run, keeping the run
+	 * itself intact so the Details page can show what is actually there.
+	 */
+	private static function whitespace_excerpt( string $content, int $offset, int $length, int $padding = 60 ): string {
+		$start   = max( 0, $offset - $padding );
+		$segment = substr( $content, $start, ( $offset - $start ) + $length + $padding );
+
+		// Drop partial tags introduced by slicing mid-markup, then the whole ones.
+		$segment = (string) preg_replace( [ '#^[^<>]*>#s', '#<[^<>]*$#s' ], '', $segment );
+		$segment = wp_strip_all_tags( $segment );
+
+		// Collapse only the whitespace around the segment's edges — line breaks and
+		// indentation from the markup — never the run being reported.
+		return trim( (string) preg_replace( '/[\r\n]+[ \t]*/u', ' ', $segment ) );
+	}
+
+	/**
+	 * Whether an error entry describes a whitespace run rather than a misspelled word.
+	 * Entries saved before whitespace checking existed have no 'type' at all.
+	 */
+	public static function is_whitespace_error( array $error ): bool {
+		return ( $error['type'] ?? 'spelling' ) === 'whitespace';
+	}
+
+	/**
+	 * Renders an error's word for display, making whitespace runs visible with ␣
+	 * markers — otherwise a "double space" row would look identical to a correct one,
+	 * since the browser collapses the spaces. Escapes its own output.
+	 */
+	public static function render_word( array $error ): string {
+		if ( ! self::is_whitespace_error( $error ) ) {
+			return esc_html( $error['word'] );
+		}
+
+		return self::mark_whitespace( esc_html( $error['word'] ) );
+	}
+
+	/**
+	 * Renders an error's example sentence: the flagged word in bold for spelling, the
+	 * whitespace run marked with ␣ for whitespace. Escapes its own output.
+	 */
+	public static function render_excerpt( array $error ): string {
+		if ( ! self::is_whitespace_error( $error ) ) {
+			return self::highlight_word( $error['excerpt'], $error['word'] );
+		}
+
+		return self::mark_whitespace( esc_html( $error['excerpt'] ) );
+	}
+
+	/**
+	 * Renders the badge naming what kind of issue an entry is. Escapes its own output.
+	 */
+	public static function render_type_badge( array $error ): string {
+		if ( self::is_whitespace_error( $error ) ) {
+			return '<span class="splecheh-badge splecheh-badge--outdated">' . esc_html__( 'whitespace', 'splecheh' ) . '</span>';
+		}
+
+		return '<span class="splecheh-badge">' . esc_html__( 'spelling', 'splecheh' ) . '</span>';
+	}
+
+	/**
+	 * Replaces runs of two or more spaces/tabs in already-escaped HTML with visible ␣
+	 * markers, one per character, so the reader can count what's actually in the source.
+	 */
+	private static function mark_whitespace( string $escaped_html ): string {
+		$result = preg_replace_callback(
+			'/[ \t]{2,}/u',
+			static function ( array $match ): string {
+				return '<span class="splecheh-whitespace-marker">' . str_repeat( '␣', strlen( $match[0] ) ) . '</span>';
+			},
+			$escaped_html
+		);
+
+		return $result !== null ? $result : $escaped_html;
 	}
 
 	/**
@@ -456,8 +620,11 @@ class Splecheh_SpellCheckReport {
 	 * Replaces the specific occurrence of $word found inside $excerpt within $content.
 	 * Falls back to the first whole-word occurrence in $content if the excerpt can't be located
 	 * (e.g. it was extracted from stripped/decoded text and no longer matches the raw HTML).
+	 *
+	 * Returns null when the word can't be found at all, so the caller can report a fix
+	 * that never reached the post instead of marking the issue resolved anyway.
 	 */
-	public static function replace_occurrence( string $content, string $word, string $excerpt, string $replacement ): string {
+	public static function replace_occurrence( string $content, string $word, string $excerpt, string $replacement ): ?string {
 		$pattern = '/\b' . preg_quote( $word, '/' ) . '\b/ui';
 
 		if ( $excerpt !== '' ) {
@@ -471,8 +638,72 @@ class Splecheh_SpellCheckReport {
 			}
 		}
 
+		if ( preg_match( $pattern, $content ) !== 1 ) {
+			return null;
+		}
+
 		$result = preg_replace( $pattern, $replacement, $content, 1 );
-		return $result !== null ? $result : $content;
+		return $result !== null ? $result : null;
+	}
+
+	/**
+	 * Replaces the first literal occurrence of a flagged whitespace pair ("word  word")
+	 * with $replacement, or returns null if it isn't there any more.
+	 *
+	 * Deliberately a literal search rather than replace_occurrence()'s \b…\b pattern:
+	 * the pair was sliced straight out of the raw content, and its edges are whatever
+	 * characters happened to sit around the whitespace run — quotes, brackets, digits —
+	 * which word boundaries can't anchor to.
+	 */
+	public static function replace_whitespace_run( string $content, string $pair, string $replacement ): ?string {
+		if ( $pair === '' ) {
+			return null;
+		}
+
+		$pos = mb_strpos( $content, $pair );
+		if ( $pos === false ) {
+			return null;
+		}
+
+		return mb_substr( $content, 0, $pos ) . $replacement . mb_substr( $content, $pos + mb_strlen( $pair ) );
+	}
+
+	/**
+	 * Re-reads a post from storage, re-splits it, and returns the keys of $fixes whose
+	 * text is not actually present in the saved content. Shared by both checks' fix
+	 * handlers (like is_outdated() above).
+	 *
+	 * Checking our own string replacement isn't enough: wp_update_post() runs the
+	 * content through kses and whatever other plugins hook content filters, so the only
+	 * trustworthy answer to "did the fix land?" is what came back out of the database.
+	 * Compared against the splitter's plain text (entities decoded, whitespace
+	 * collapsed) rather than raw HTML, so a fix isn't reported as lost just because the
+	 * stored markup escapes it differently.
+	 *
+	 * @param array<int|string, string> $fixes Fix text, keyed by report entry index.
+	 * @return array<int|string> Keys of the fixes that are missing from the saved post.
+	 */
+	public static function find_unapplied_fixes( int $post_id, array $fixes ): array {
+		if ( empty( $fixes ) ) {
+			return [];
+		}
+
+		$post = get_post( $post_id );
+		if ( ! $post ) {
+			return array_keys( $fixes );
+		}
+
+		$saved   = implode( "\n", Splecheh_ContentSplitter::plain_texts( $post->post_content ) );
+		$missing = [];
+
+		foreach ( $fixes as $index => $text ) {
+			$needle = trim( (string) preg_replace( '/\s+/u', ' ', $text ) );
+			if ( $needle === '' || mb_stripos( $saved, $needle ) === false ) {
+				$missing[] = $index;
+			}
+		}
+
+		return $missing;
 	}
 
 	/**
@@ -577,7 +808,10 @@ class Splecheh_SpellCheckReport {
 			static function ( array $error ): array {
 				return [
 					'word'            => $error['word'],
-					'excerpt'         => self::highlight_word( $error['excerpt'], $error['word'] ),
+					'wordHtml'        => self::render_word( $error ),
+					'typeHtml'        => self::render_type_badge( $error ),
+					'isWhitespace'    => self::is_whitespace_error( $error ),
+					'excerpt'         => self::render_excerpt( $error ),
 					'suggestion'      => $error['suggestions'][0] ?? '',
 					'suggestionsHtml' => self::render_suggestions( $error['suggestions'] ?? [], $error['word'] ),
 					'resolved'        => ! empty( $error['resolved'] ),

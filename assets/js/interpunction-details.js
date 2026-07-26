@@ -65,11 +65,30 @@
 					showMessage('error', splechehInterpunctionDetails.i18n.requestFailed);
 					return;
 				}
+				// Only rows the server confirmed against the saved post are resolved —
+				// the rest stay actionable so the fix isn't silently lost.
+				var unapplied = (data.data.unapplied || []).map(String);
+
 				rows.forEach(function (row) {
 					var wasSubmitted = items.some(function (item) { return item.index === row.dataset.index; });
-					if (wasSubmitted) markRowResolved(row);
+					if (wasSubmitted && unapplied.indexOf(String(row.dataset.index)) === -1) markRowResolved(row);
 				});
-				showMessage('success', data.data.fixed + ' ' + splechehInterpunctionDetails.i18n.issuesFixed);
+
+				// The fix bumps the post's modified date, so Spell Check is re-run
+				// server-side to keep it current — and to catch a spelling error the
+				// rewritten sentence may have introduced.
+				var text = data.data.fixed + ' ' + splechehInterpunctionDetails.i18n.issuesFixed;
+				var spellcheck = data.data.spellcheck || {};
+
+				if (unapplied.length > 0) {
+					showMessage('error', text + ' ' + unapplied.length + ' ' + splechehInterpunctionDetails.i18n.fixNotApplied);
+				} else if (spellcheck.error) {
+					showMessage('warning', text + ' ' + splechehInterpunctionDetails.i18n.spellcheckFailed + ' ' + spellcheck.error);
+				} else if (spellcheck.ran && spellcheck.issues > 0) {
+					showMessage('warning', text + ' ' + spellcheck.issues + ' ' + splechehInterpunctionDetails.i18n.spellcheckIssues);
+				} else {
+					showMessage('success', text);
+				}
 			}).catch(function () {
 				showMessage('error', splechehInterpunctionDetails.i18n.requestFailed);
 			});
@@ -94,8 +113,7 @@
 			var actionsCell = issue.resolved
 				? '<span class="splecheh-badge splecheh-badge--current">' + splechehInterpunctionDetails.i18n.resolved + '</span>'
 				: '<button class="button button-primary button-small splecheh-fix">' + splechehInterpunctionDetails.i18n.fix + '</button> ' +
-					'<button class="button button-small splecheh-ignore-post">' + splechehInterpunctionDetails.i18n.ignoreInPost + '</button> ' +
-					'<button class="button button-small splecheh-ignore-always">' + splechehInterpunctionDetails.i18n.ignoreAlways + '</button>';
+					'<button class="button button-small splecheh-ignore-post">' + splechehInterpunctionDetails.i18n.ignoreInPost + '</button>';
 
 			return '<tr data-index="' + index + '"' + (issue.resolved ? ' class="splecheh-resolved"' : '') + '>' +
 				'<th class="check-column"><input type="checkbox" class="splecheh-row-check"' + checkboxAttrs + '></th>' +
@@ -195,8 +213,6 @@
 				applyFix([row]);
 			} else if (e.target.closest('.splecheh-ignore-post')) {
 				applyIgnore('splecheh_interpunction_ignore_in_post', [row]);
-			} else if (e.target.closest('.splecheh-ignore-always')) {
-				applyIgnore('splecheh_interpunction_ignore_always', [row]);
 			}
 		});
 
@@ -233,8 +249,6 @@
 					applyFix(rows);
 				} else if (action === 'ignore_in_post') {
 					applyIgnore('splecheh_interpunction_ignore_in_post', rows);
-				} else if (action === 'ignore_always') {
-					applyIgnore('splecheh_interpunction_ignore_always', rows);
 				}
 			});
 		}

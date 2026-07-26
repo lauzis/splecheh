@@ -104,12 +104,15 @@ function parse_args( array $argv ): array {
 [ $options, $payload_json ] = parse_args( $argv );
 
 // *_TIMEOUT: --timeout on the command line wins over the SPLECHEH_*_TIMEOUT
-// env vars, which win over these defaults. The default is only enough for
+// env vars, which win over these defaults. The defaults are only enough for
 // small batches (a handful of sentences); a full post can easily need
-// several minutes. Whatever value is used here should be kept slightly below
-// Splecheh's own `splecheh_interpunction_command_timeout` filter (default
-// 60s, also needs raising for real posts) so this script reports a real
-// error instead of being killed mid-request.
+// several minutes.
+//
+// When Splecheh runs this wrapper it appends --timeout itself, derived from the
+// Settings > Interpunction Check > "Command Timeout (seconds)" field minus a few
+// seconds, so this script reports a real error instead of being killed
+// mid-request — these defaults then only apply when the wrapper is run by hand
+// (or from tools/benchmark.sh).
 define(
 	'CLAUDE_TIMEOUT',
 	$options['timeout'] ?? (float) ( getenv( 'SPLECHEH_CLAUDE_TIMEOUT' ) ?: 55 )

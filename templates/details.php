@@ -67,6 +67,7 @@ $fix_everywhere_label = $language !== ''
 					<td class="manage-column column-cb check-column">
 						<input type="checkbox" id="splecheh-select-all">
 					</td>
+					<th><?php esc_html_e( 'Type', 'splecheh' ); ?></th>
 					<th><?php esc_html_e( 'Word', 'splecheh' ); ?></th>
 					<th><?php esc_html_e( 'Suggestion', 'splecheh' ); ?></th>
 					<th><?php esc_html_e( 'Sentence', 'splecheh' ); ?></th>
@@ -76,19 +77,21 @@ $fix_everywhere_label = $language !== ''
 			</thead>
 			<tbody>
 				<?php if ( empty( $errors ) ) : ?>
-				<tr><td colspan="6"><?php esc_html_e( 'No spelling issues found.', 'splecheh' ); ?></td></tr>
+				<tr><td colspan="7"><?php esc_html_e( 'No spelling issues found.', 'splecheh' ); ?></td></tr>
 				<?php endif; ?>
 				<?php foreach ( $errors as $index => $error ) :
-					$resolved   = ! empty( $error['resolved'] );
-					$suggestion = $error['suggestions'][0] ?? '';
+					$resolved      = ! empty( $error['resolved'] );
+					$suggestion    = $error['suggestions'][0] ?? '';
+					$is_whitespace = Splecheh_SpellCheckReport::is_whitespace_error( $error );
 				?>
 				<tr data-index="<?php echo esc_attr( (string) $index ); ?>"<?php echo $resolved ? ' class="splecheh-resolved"' : ''; ?>>
 					<th class="check-column">
 						<input type="checkbox" class="splecheh-row-check" <?php disabled( $resolved ); ?>>
 					</th>
-					<td><?php echo esc_html( $error['word'] ); ?></td>
+					<td><?php echo Splecheh_SpellCheckReport::render_type_badge( $error ); ?></td>
+					<td><?php echo Splecheh_SpellCheckReport::render_word( $error ); ?></td>
 					<td><?php echo Splecheh_SpellCheckReport::render_suggestions( $error['suggestions'] ?? [], $error['word'] ); ?></td>
-					<td><?php echo Splecheh_SpellCheckReport::highlight_word( $error['excerpt'], $error['word'] ); ?></td>
+					<td><?php echo Splecheh_SpellCheckReport::render_excerpt( $error ); ?></td>
 					<td>
 						<input type="text" class="splecheh-replacement regular-text" value="<?php echo esc_attr( $suggestion ); ?>" <?php disabled( $resolved ); ?>>
 					</td>
@@ -97,9 +100,13 @@ $fix_everywhere_label = $language !== ''
 							<span class="splecheh-badge splecheh-badge--current"><?php esc_html_e( 'Resolved', 'splecheh' ); ?></span>
 						<?php else : ?>
 							<button class="button button-primary button-small splecheh-fix"><?php esc_html_e( 'Fix', 'splecheh' ); ?></button>
-							<button class="button button-small splecheh-fix-everywhere"><?php echo esc_html( $fix_everywhere_label ); ?></button>
+							<?php if ( ! $is_whitespace ) : ?>
+								<button class="button button-small splecheh-fix-everywhere"><?php echo esc_html( $fix_everywhere_label ); ?></button>
+							<?php endif; ?>
 							<button class="button button-small splecheh-ignore-post"><?php esc_html_e( 'Ignore in post', 'splecheh' ); ?></button>
-							<button class="button button-small splecheh-ignore-always"><?php esc_html_e( 'Ignore always', 'splecheh' ); ?></button>
+							<?php if ( ! $is_whitespace ) : ?>
+								<button class="button button-small splecheh-ignore-always"><?php esc_html_e( 'Ignore always', 'splecheh' ); ?></button>
+							<?php endif; ?>
 						<?php endif; ?>
 					</td>
 				</tr>

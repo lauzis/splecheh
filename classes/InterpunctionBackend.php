@@ -11,9 +11,19 @@ class Splecheh_InterpunctionBackend {
 	/**
 	 * Default timeout (in seconds) for the Commandline Interpunction Check process,
 	 * so a stuck/hanging command fails fast with a clear error instead of hanging
-	 * the request indefinitely. Filterable via `splecheh_interpunction_command_timeout`.
+	 * the request indefinitely. Overridable per site via the "Command Timeout"
+	 * Settings field and the `splecheh_interpunction_command_timeout` filter — see
+	 * get_command_timeout().
 	 */
 	const DEFAULT_COMMAND_TIMEOUT = 60;
+
+	/**
+	 * How many seconds below the plugin's own process timeout the bundled
+	 * tools/llm-wrapper.php is told to give up (see with_wrapper_timeout()), so a
+	 * slow provider surfaces the wrapper's real error rather than being killed
+	 * mid-call by the process timeout.
+	 */
+	const WRAPPER_TIMEOUT_MARGIN = 5;
 
 	/**
 	 * Canned sentences used by the Settings page "Test Interpunction Check" button,
@@ -195,6 +205,26 @@ class Splecheh_InterpunctionBackend {
 		return $value !== '' && $value !== null ? (int) $value : self::DEFAULT_CHUNK_SIZE;
 	}
 
+	/**
+	 * How long (in seconds) a Commandline Interpunction Check call may take before it
+	 * is killed — see DEFAULT_COMMAND_TIMEOUT. Zero/blank/negative values fall back to
+	 * the default rather than disabling the timeout, since an unbounded call would hang
+	 * the whole request. Also filterable via `splecheh_interpunction_command_timeout`,
+	 * which takes precedence over this Settings field.
+	 */
+	public static function get_command_timeout(): float {
+		$timeout = (float) self::DEFAULT_COMMAND_TIMEOUT;
+
+		if ( function_exists( 'carbon_get_theme_option' ) ) {
+			$value = carbon_get_theme_option( 'splecheh_interpunction_command_timeout' );
+			if ( $value !== '' && $value !== null && (float) $value > 0 ) {
+				$timeout = (float) $value;
+			}
+		}
+
+		return (float) apply_filters( 'splecheh_interpunction_command_timeout', $timeout );
+	}
+
 	public static function get_prompt(): string {
 		if ( ! function_exists( 'carbon_get_theme_option' ) ) {
 			return Splecheh_InterpunctionReport::DEFAULT_PROMPT;
@@ -281,6 +311,27 @@ class Splecheh_InterpunctionBackend {
 	}
 
 	/**
+	 * Appends "--timeout <seconds>" to a bundled tools/llm-wrapper.php command that
+	 * doesn't already carry one, so the "Command Timeout" Settings field is the single
+	 * place controlling how long a call may take. Without this the wrapper would keep
+	 * its own built-in default (55s for the CLI providers) and silently cap whatever
+	 * the Settings field says.
+	 *
+	 * The wrapper is given WRAPPER_TIMEOUT_MARGIN seconds less than the process
+	 * timeout so it gives up first and reports the provider's real error, instead of
+	 * being killed mid-call. A --timeout written into the command by hand always wins.
+	 */
+	public static function with_wrapper_timeout( string $command, float $timeout ): string {
+		if ( strpos( $command, 'llm-wrapper.php' ) === false || preg_match( '/--timeout[= ]/', $command ) ) {
+			return $command;
+		}
+
+		$wrapper_timeout = max( 1, (int) round( $timeout ) - self::WRAPPER_TIMEOUT_MARGIN );
+
+		return $command . ' --timeout ' . $wrapper_timeout;
+	}
+
+	/**
 	 * Calls the locally-configured shell command, appending {language, prompt, sentences}
 	 * as a single shell-escaped JSON parameter and expecting a JSON array of
 	 * {original, fixed, explanation} on stdout. Keeps API keys out of WordPress: the
@@ -309,7 +360,8 @@ class Splecheh_InterpunctionBackend {
 			]
 		);
 
-		$timeout = (float) apply_filters( 'splecheh_interpunction_command_timeout', self::DEFAULT_COMMAND_TIMEOUT );
+		$timeout = self::get_command_timeout();
+		$command = self::with_wrapper_timeout( $command, $timeout );
 
 		Splecheh_Logs::addLog( 'interpunction', 'Interpunction commandline started', [ 'command' => $command, 'timeout' => $timeout ] );
 

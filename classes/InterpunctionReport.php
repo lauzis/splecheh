@@ -86,7 +86,7 @@ class Splecheh_InterpunctionReport {
 	 * @return array|WP_Error
 	 */
 	private static function finish_run( int $post_id, WP_Post $post, string $language, array $results, int $chunks_processed, int $chunks_total, float $duration_seconds = 0.0, int $sentence_count = 0 ) {
-		$issues = self::filter_ignored_sentences( $post_id, self::build_issues( $results ), $language );
+		$issues = self::filter_ignored_sentences( $post_id, self::build_issues( $results ) );
 
 		$report = [
 			'post_id'          => $post_id,
@@ -179,12 +179,14 @@ class Splecheh_InterpunctionReport {
 	}
 
 	/**
-	 * Removes issues for sentences ignored for this post (post meta) or globally for its language.
+	 * Removes issues for sentences ignored for this post ("Ignore in post").
+	 *
+	 * Per-post only, deliberately: unlike a misspelled word, a flagged sentence is
+	 * specific enough that it is never going to recur verbatim in another post, so a
+	 * global ignore list of sentences carried no value — it was removed in 0.25.1.
 	 */
-	private static function filter_ignored_sentences( int $post_id, array $issues, string $language ): array {
-		$post_ignored   = (array) get_post_meta( $post_id, '_splecheh_interpunction_ignored_sentences', true );
-		$global_ignored = Splecheh_InterpunctionIgnoreList::get_sentences( $language );
-		$ignored        = array_merge( $post_ignored, $global_ignored );
+	private static function filter_ignored_sentences( int $post_id, array $issues ): array {
+		$ignored = (array) get_post_meta( $post_id, '_splecheh_interpunction_ignored_sentences', true );
 
 		if ( empty( $ignored ) ) {
 			return $issues;
@@ -287,6 +289,82 @@ class Splecheh_InterpunctionReport {
 	}
 
 	/**
+	 * Aggregates data for the dashboard widget across all published posts of the enabled
+	 * post types: total unresolved issues, distinct posts with at least one unresolved
+	 * issue, and sentences ignored per post. Mirrors
+	 * Splecheh_SpellCheckReport::get_dashboard_summary(), minus a global ignore list —
+	 * interpunction ignores are per-post only (see filter_ignored_sentences()).
+	 *
+	 * Counted with two aggregate queries off the `_splecheh_interpunction_issue_count`
+	 * meta (the same pattern Splecheh_InterpunctionCron uses), not by opening every
+	 * post's report file: the dashboard renders on every admin page load, and a site
+	 * with a few hundred checked posts would otherwise pay a few hundred file reads and
+	 * JSON decodes for three numbers. The meta is kept in step with the reports by
+	 * save_report() and update_report(), so it reflects Details-page edits immediately.
+	 *
+	 * @return array{unresolved_count: int, posts_with_issues: int, ignored_sentences: int}
+	 */
+	public static function get_dashboard_summary(): array {
+		global $wpdb;
+
+		$empty = [
+			'unresolved_count'  => 0,
+			'posts_with_issues' => 0,
+			'ignored_sentences' => 0,
+		];
+
+		$enabled_types = splecheh_get_enabled_post_types();
+		if ( empty( $enabled_types ) ) {
+			return $empty;
+		}
+
+		$placeholders = implode( ',', array_fill( 0, count( $enabled_types ), '%s' ) );
+
+		// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$totals = $wpdb->get_row(
+			$wpdb->prepare(
+				"SELECT COUNT(*) AS posts_with_issues,
+				        COALESCE( SUM( CAST( pm.meta_value AS UNSIGNED ) ), 0 ) AS unresolved_count
+				 FROM {$wpdb->postmeta} pm
+				 INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id
+				 WHERE pm.meta_key = '_splecheh_interpunction_issue_count'
+				   AND CAST( pm.meta_value AS UNSIGNED ) > 0
+				   AND p.post_status = 'publish'
+				   AND p.post_type IN ($placeholders)",
+				...$enabled_types
+			),
+			ARRAY_A
+		);
+
+		// Ignored sentences are a serialized array per post, so the rows have to be
+		// unserialized to be counted — there are only ever as many rows as there are
+		// posts someone has ignored a sentence in.
+		$ignored_rows = $wpdb->get_col(
+			$wpdb->prepare(
+				"SELECT pm.meta_value
+				 FROM {$wpdb->postmeta} pm
+				 INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id
+				 WHERE pm.meta_key = '_splecheh_interpunction_ignored_sentences'
+				   AND p.post_status = 'publish'
+				   AND p.post_type IN ($placeholders)",
+				...$enabled_types
+			)
+		);
+		// phpcs:enable
+
+		$ignored_sentences = 0;
+		foreach ( (array) $ignored_rows as $row ) {
+			$ignored_sentences += count( (array) maybe_unserialize( $row ) );
+		}
+
+		return [
+			'unresolved_count'  => (int) ( $totals['unresolved_count'] ?? 0 ),
+			'posts_with_issues' => (int) ( $totals['posts_with_issues'] ?? 0 ),
+			'ignored_sentences' => $ignored_sentences,
+		];
+	}
+
+	/**
 	 * Counts the unresolved issues in a post's saved report.
 	 */
 	public static function count_unresolved( int $post_id ): int {
@@ -314,16 +392,46 @@ class Splecheh_InterpunctionReport {
 	}
 
 	/**
-	 * Replaces the first occurrence of $original found in $content with $fixed.
-	 * Matched case-insensitively (HTML content may differ in whitespace/entities from
-	 * the plain-text sentence the LLM saw), but the replacement text is inserted verbatim.
+	 * Replaces the first occurrence of $original found in $content with $fixed, or
+	 * returns null when the sentence can't be located — so the caller can report a
+	 * fix that didn't go through instead of silently marking it resolved.
+	 *
+	 * Matched case-insensitively, and whitespace-flexibly: the report's sentence text
+	 * comes from Splecheh_ContentSplitter, which collapses every run of whitespace to a
+	 * single space, so a source paragraph containing "word<newline>word" or a stray
+	 * double space never matches the report's sentence literally. Each whitespace run in
+	 * the sentence is therefore matched as \s+ against the raw content. The replacement
+	 * text is inserted verbatim (which also normalizes the whitespace it replaces).
+	 *
+	 * Still unmatched, by design: a sentence broken up by inline markup (<strong>, <a>)
+	 * or containing HTML entities, since writing plain text back over markup would
+	 * destroy it. Those are reported to the caller as not applied.
 	 */
-	public static function apply_fix( string $content, string $original, string $fixed ): string {
-		$pos = mb_stripos( $content, $original );
-		if ( $pos === false ) {
-			return $content;
+	public static function apply_fix( string $content, string $original, string $fixed ): ?string {
+		$original = trim( $original );
+		if ( $original === '' ) {
+			return null;
 		}
-		return mb_substr( $content, 0, $pos ) . $fixed . mb_substr( $content, $pos + mb_strlen( $original ) );
+
+		$pos = mb_stripos( $content, $original );
+		if ( $pos !== false ) {
+			return mb_substr( $content, 0, $pos ) . $fixed . mb_substr( $content, $pos + mb_strlen( $original ) );
+		}
+
+		$words = preg_split( '/\s+/u', $original, -1, PREG_SPLIT_NO_EMPTY );
+		if ( empty( $words ) ) {
+			return null;
+		}
+
+		$pattern = '/' . implode( '\s+', array_map( static fn( string $word ): string => preg_quote( $word, '/' ), $words ) ) . '/iu';
+		if ( preg_match( $pattern, $content, $matches, PREG_OFFSET_CAPTURE ) !== 1 ) {
+			return null;
+		}
+
+		// preg_match offsets are byte offsets — pair them with substr(), not mb_substr().
+		$offset = $matches[0][1];
+
+		return substr( $content, 0, $offset ) . $fixed . substr( $content, $offset + strlen( $matches[0][0] ) );
 	}
 
 	/**

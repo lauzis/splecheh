@@ -9,6 +9,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 	<h2><?php esc_html_e( 'Table of Contents', 'splecheh' ); ?></h2>
 	<ul style="list-style:disc;padding-left:1.5em;">
+		<li><a href="#spell-check"><?php esc_html_e( 'Spell Check', 'splecheh' ); ?></a></li>
 		<li><a href="#spell-check-vs-interpunction-check"><?php esc_html_e( 'Spell Check vs Interpunction Check', 'splecheh' ); ?></a></li>
 		<li>
 			<a href="#interpunction-check"><?php esc_html_e( 'Interpunction Check', 'splecheh' ); ?></a>
@@ -26,6 +27,20 @@ if ( ! defined( 'ABSPATH' ) ) {
 			</ul>
 		</li>
 	</ul>
+
+	<h2 id="spell-check"><?php esc_html_e( 'Spell Check', 'splecheh' ); ?></h2>
+
+	<p>
+		<?php esc_html_e( 'Spell Check flags two kinds of issue, shown in the "Type" column on the Details page: "spelling" for a word Aspell does not recognise, and "whitespace" for a run of two or more spaces or tabs between two words.', 'splecheh' ); ?>
+	</p>
+
+	<p>
+		<?php esc_html_e( 'A double space is invisible to readers — HTML collapses whitespace when the page is rendered — but it is still noise in the source, and it breaks Interpunction Check\'s sentence matching, because sentences are stored with their whitespace normalized. For that reason the run is shown as ␣␣ in the table, since it would otherwise look exactly like a correct single space. The Replacement field is pre-filled with the collapsed text, so fixing one is a single click.', 'splecheh' ); ?>
+	</p>
+
+	<p>
+		<?php esc_html_e( 'Never flagged as whitespace issues: spacing inside <pre> and <code> blocks (where it is deliberate), shortcodes, HTML comments, tag attributes, and the indentation and line breaks of the block markup itself. "Fix everywhere" and "Ignore always" are not offered for these rows either — a stray double space is noise in one post, not a word worth adding to a language-wide list. "Ignore in post" works as usual.', 'splecheh' ); ?>
+	</p>
 
 	<h2 id="spell-check-vs-interpunction-check"><?php esc_html_e( 'Spell Check vs Interpunction Check', 'splecheh' ); ?></h2>
 
@@ -46,12 +61,13 @@ if ( ! defined( 'ABSPATH' ) ) {
 	<p><?php esc_html_e( 'Settings:', 'splecheh' ); ?></p>
 	<ul style="list-style:disc;padding-left:1.5em;">
 		<li><?php esc_html_e( 'Enable Interpunction Check — shows the "Interpunction Check" page in the menu.', 'splecheh' ); ?></li>
-		<li><?php esc_html_e( 'Require Spell Check First — on by default; skips a post for Interpunction Check until its Spell Check is up to date with zero unresolved issues.', 'splecheh' ); ?></li>
+		<li><?php esc_html_e( 'Require Spell Check First — on by default; skips a post for Interpunction Check until its Spell Check is up to date with zero unresolved issues. Applying an interpunction fix re-runs Spell Check for that post automatically, so a fix never blocks the post by making its own Spell Check outdated — and a spelling error introduced by the fix is caught right away.', 'splecheh' ); ?></li>
 		<li><?php esc_html_e( 'Type — how the request is made: Commandline (local model/script), OpenAI, Claude, or Gemini.', 'splecheh' ); ?></li>
 		<li><?php esc_html_e( 'Commandline Command — shown only for the Commandline type.', 'splecheh' ); ?></li>
 		<li><?php esc_html_e( 'Endpoint — optional override of the default API URL; shown only for OpenAI/Claude/Gemini.', 'splecheh' ); ?></li>
 		<li><?php esc_html_e( 'Access Key — API token for OpenAI/Claude/Gemini; not needed for Commandline.', 'splecheh' ); ?></li>
 		<li><?php esc_html_e( 'Prompt — instruction sent to the LLM; use {language} as a placeholder for the post\'s language.', 'splecheh' ); ?></li>
+		<li><?php esc_html_e( 'Command Timeout (seconds) — Commandline type only; how long one call may take before it is killed and reported as an error (default 60). Raise it if a chunk legitimately needs longer, but remember a browser-triggered Run Now is also bound by the server\'s own limits (PHP max_execution_time, PHP-FPM request_terminate_timeout, the web server\'s proxy/FastCGI read timeout). Lowering the Sentence Chunk Size is usually the better fix for timeouts.', 'splecheh' ); ?></li>
 	</ul>
 
 	<h3 id="commandline-contract"><?php esc_html_e( 'Commandline Contract', 'splecheh' ); ?></h3>
@@ -83,7 +99,7 @@ ollama pull qwen2.5:7b</pre>
 			<pre style="background:#1e1e1e;color:#d4d4d4;padding:1em;border-radius:4px;font-size:13px;overflow:auto;">wp-content/plugins/splecheh/tools/local-model.sh start --model qwen2.5:7b</pre>
 		</li>
 		<li><?php esc_html_e( 'In Settings > Interpunction Check, leave Commandline Command as the default tools/llm-wrapper.php, and pick your model from the "Local Model (via wrapper)" dropdown — it appends --provider ollama --model <selection> to the command automatically.', 'splecheh' ); ?></li>
-		<li><?php esc_html_e( 'Raise the timeout for real posts (a single test sentence is fast, but a whole post needs much longer): set the Commandline Command\'s --timeout flag (e.g. --timeout 300) and raise Splecheh\'s own splecheh_interpunction_command_timeout filter to match.', 'splecheh' ); ?></li>
+		<li><?php esc_html_e( 'Raise the timeout for real posts (a single test sentence is fast, but a whole post needs much longer): set "Command Timeout (seconds)" above — it is passed through to the wrapper automatically, so there is no second value to keep in sync.', 'splecheh' ); ?></li>
 	</ol>
 
 	<p>

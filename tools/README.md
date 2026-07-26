@@ -77,31 +77,35 @@ takes precedence over the Settings field. Lower it further if individual
 calls still time out on your setup; raising it reduces the number of calls
 but makes each one riskier.
 
-Two timeouts must both be raised together to comfortably cover one chunk's
-call, or the request gets killed before it finishes:
+The simplest way to cover one chunk's call is the **Command Timeout (seconds)**
+field in Settings > Interpunction Check (default 60): when the Commandline
+Command runs this wrapper, Splecheh passes the field's value minus 5 seconds to
+it as `--timeout`, so both timeouts move together and the wrapper stays the one
+that reports a slow provider. Everything below is only needed to override that.
 
-1. **`llm-wrapper.php`'s own timeout** — simplest is the `--timeout <seconds>`
-   flag on the Commandline Command itself (no server config needed), e.g.
+1. **`llm-wrapper.php`'s own timeout** — a `--timeout <seconds>` flag written
+   into the Commandline Command by hand wins over the Settings field, e.g.
    `php .../tools/llm-wrapper.php --timeout 300`. Or set it via env var:
    `SPLECHEH_CLAUDE_TIMEOUT` (default 55s) for the `claude` provider,
    `SPLECHEH_OLLAMA_TIMEOUT` (default 300s) for the `ollama` provider —
-   `--timeout` wins if both are set. Env vars go in the PHP-FPM pool config:
+   `--timeout` (from either source) wins if both are set. Env vars go in the
+   PHP-FPM pool config:
 
    ```ini
    env[SPLECHEH_CLAUDE_TIMEOUT] = 300
    ```
 
-2. **Splecheh's own command timeout** — defaults to 60s, raised via the
+2. **Splecheh's own command timeout** — the Settings field above, or the
    `splecheh_interpunction_command_timeout` filter (in a small mu-plugin, or
-   your theme's `functions.php`):
+   your theme's `functions.php`), which takes precedence over it:
 
    ```php
    add_filter( 'splecheh_interpunction_command_timeout', fn() => 300 ); // seconds
    ```
 
-Keep `llm-wrapper.php`'s own timeout slightly **below** Splecheh's, so a
-genuinely stuck request surfaces a clear "exceeded the timeout" error from
-the wrapper itself instead of being killed by Splecheh first with a less
+If you set both by hand, keep `llm-wrapper.php`'s own timeout slightly **below**
+Splecheh's, so a genuinely stuck request surfaces a clear "exceeded the timeout"
+error from the wrapper itself instead of being killed by Splecheh first with a less
 specific message. Note the total time for a whole post is roughly
 `(sentences / chunk size) × time per chunk` — a 50-sentence post at 5 per
 chunk and ~150-200s per chunk can still take 25+ minutes end to end; that's
@@ -195,8 +199,10 @@ Commandline Command: php /absolute/path/to/wp-content/plugins/splecheh/tools/llm
 
 Local CPU inference is much slower than a hosted API — see "Timeouts for
 real posts, not just test batches" above; you'll almost certainly need to
-raise both `SPLECHEH_OLLAMA_TIMEOUT` and `splecheh_interpunction_command_timeout`
-for anything beyond a couple of sentences.
+raise Settings > Interpunction Check > **Command Timeout (seconds)** well past
+its 60s default for anything beyond a couple of sentences. That value is passed
+through to this wrapper automatically, so `SPLECHEH_OLLAMA_TIMEOUT` only matters
+if you run the wrapper outside Splecheh (e.g. `tools/benchmark.sh`).
 
 ### Switching models later
 

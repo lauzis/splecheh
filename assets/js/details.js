@@ -75,11 +75,21 @@
 					showMessage('error', splechehDetails.i18n.requestFailed);
 					return;
 				}
+				// Only rows the server confirmed against the saved post are resolved —
+				// the rest stay actionable so the fix isn't silently lost.
+				var unapplied = (data.data.unapplied || []).map(String);
+
 				rows.forEach(function (row) {
 					var wasSubmitted = items.some(function (item) { return item.index === row.dataset.index; });
-					if (wasSubmitted) markRowResolved(row);
+					if (wasSubmitted && unapplied.indexOf(String(row.dataset.index)) === -1) markRowResolved(row);
 				});
-				showMessage('success', data.data.fixed + ' ' + splechehDetails.i18n.issuesFixed);
+
+				var text = data.data.fixed + ' ' + splechehDetails.i18n.issuesFixed;
+				if (unapplied.length > 0) {
+					showMessage('error', text + ' ' + unapplied.length + ' ' + splechehDetails.i18n.fixNotApplied);
+				} else {
+					showMessage('success', text);
+				}
 			}).catch(function () {
 				showMessage('error', splechehDetails.i18n.requestFailed);
 			});
@@ -101,16 +111,26 @@
 
 		function renderIssueRow(error, index) {
 			var checkboxAttrs = error.resolved ? ' disabled' : '';
+
+			// Whitespace runs are per-post source noise: fixing one everywhere or
+			// ignoring it for a whole language would be meaningless.
+			var openActions = '<button class="button button-primary button-small splecheh-fix">' + splechehDetails.i18n.fix + '</button> ';
+			if (!error.isWhitespace) {
+				openActions += '<button class="button button-small splecheh-fix-everywhere">' + splechehDetails.i18n.fixEverywhere + '</button> ';
+			}
+			openActions += '<button class="button button-small splecheh-ignore-post">' + splechehDetails.i18n.ignoreInPost + '</button>';
+			if (!error.isWhitespace) {
+				openActions += ' <button class="button button-small splecheh-ignore-always">' + splechehDetails.i18n.ignoreAlways + '</button>';
+			}
+
 			var actionsCell = error.resolved
 				? '<span class="splecheh-badge splecheh-badge--current">' + splechehDetails.i18n.resolved + '</span>'
-				: '<button class="button button-primary button-small splecheh-fix">' + splechehDetails.i18n.fix + '</button> ' +
-					'<button class="button button-small splecheh-fix-everywhere">' + splechehDetails.i18n.fixEverywhere + '</button> ' +
-					'<button class="button button-small splecheh-ignore-post">' + splechehDetails.i18n.ignoreInPost + '</button> ' +
-					'<button class="button button-small splecheh-ignore-always">' + splechehDetails.i18n.ignoreAlways + '</button>';
+				: openActions;
 
 			return '<tr data-index="' + index + '"' + (error.resolved ? ' class="splecheh-resolved"' : '') + '>' +
 				'<th class="check-column"><input type="checkbox" class="splecheh-row-check"' + checkboxAttrs + '></th>' +
-				'<td>' + escapeHtml(error.word) + '</td>' +
+				'<td>' + error.typeHtml + '</td>' +
+				'<td>' + error.wordHtml + '</td>' +
 				'<td>' + error.suggestionsHtml + '</td>' +
 				'<td>' + error.excerpt + '</td>' +
 				'<td><input type="text" class="splecheh-replacement regular-text" value="' + escapeHtml(error.suggestion) + '"' + checkboxAttrs + '></td>' +
@@ -123,7 +143,7 @@
 			if (!tbody) return;
 
 			if (errors.length === 0) {
-				tbody.innerHTML = '<tr><td colspan="6">' + splechehDetails.i18n.noIssues + '</td></tr>';
+				tbody.innerHTML = '<tr><td colspan="7">' + splechehDetails.i18n.noIssues + '</td></tr>';
 				return;
 			}
 

@@ -25,6 +25,12 @@ if ( ! function_exists( 'is_wp_error' ) ) {
 	}
 }
 
+if ( ! function_exists( 'esc_html__' ) ) {
+	function esc_html__( string $text, string $domain = 'default' ): string {
+		return htmlspecialchars( $text, ENT_QUOTES, 'UTF-8' );
+	}
+}
+
 if ( ! function_exists( 'esc_html' ) ) {
 	function esc_html( string $text ): string {
 		return htmlspecialchars( $text, ENT_QUOTES, 'UTF-8' );
@@ -204,6 +210,5 @@ require_once dirname( __DIR__ ) . '/classes/AutoApplyList.php';
 require_once dirname( __DIR__ ) . '/classes/TermIgnoreList.php';
 require_once dirname( __DIR__ ) . '/classes/ContentSplitter.php';
 require_once dirname( __DIR__ ) . '/classes/SpellCheckReport.php';
-require_once dirname( __DIR__ ) . '/classes/InterpunctionIgnoreList.php';
 require_once dirname( __DIR__ ) . '/classes/InterpunctionReport.php';
 require_once dirname( __DIR__ ) . '/classes/InterpunctionBackend.php';
