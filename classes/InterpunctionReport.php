@@ -491,14 +491,23 @@ class Splecheh_InterpunctionReport {
 			[ $offset, $length ] = $span;
 			$from                = $map[ $offset ];
 			$to                  = $map[ $offset + $length ];
-			$segments[ $index ]  = substr( $fixed, $from, $to - $from );
+			$slice               = substr( $fixed, $from, $to - $from );
+
+			// A text run that had words and now has none means the fix deleted the whole
+			// content of a tag — leaving <em></em> behind and throwing away whatever the
+			// emphasis was for. Refuse the fix and let it be reported instead.
+			if ( trim( $segments[ $index ] ) !== '' && trim( $slice ) === '' ) {
+				return null;
+			}
+
+			$segments[ $index ] = $slice;
 		}
 
 		$candidate = substr( $content, 0, $start ) . implode( '', $segments ) . substr( $content, $start + strlen( $region ) );
 
-		// Two guards, because the alternative to catching a bad edit here is finding it
-		// in a published post: every tag must have survived byte-for-byte, and the text
-		// that replaced the region must add up to exactly the fixed sentence.
+		// The remaining guards, because the alternative to catching a bad edit here is
+		// finding it in a published post: every tag must have survived byte-for-byte, and
+		// the text that replaced the region must add up to exactly the fixed sentence.
 		if ( ! self::markup_survived( $content, $candidate ) ) {
 			return null;
 		}

@@ -128,6 +128,93 @@ final class InterpunctionApplyFixTest extends TestCase {
 		);
 	}
 
+	public function test_applies_across_several_tags_in_one_sentence(): void {
+		$this->assertSame(
+			'<p>A <b>b,</b> c <i>d</i> e f.</p>',
+			\Splecheh_InterpunctionReport::apply_fix( '<p>a <b>b</b> c <i>d</i> e f</p>', 'a b c d e f', 'A b, c d e f.' )
+		);
+	}
+
+	public function test_applies_across_nested_tags(): void {
+		$this->assertSame(
+			'<p>See <strong>the <em>big</em> one</strong> here.</p>',
+			\Splecheh_InterpunctionReport::apply_fix(
+				'<p>see <strong>the <em>big</em> one</strong> here</p>',
+				'see the big one here',
+				'See the big one here.'
+			)
+		);
+	}
+
+	public function test_applies_when_the_model_adds_a_word(): void {
+		$this->assertSame(
+			'<p>This is a <em>very</em> good stuff.</p>',
+			\Splecheh_InterpunctionReport::apply_fix(
+				'<p>this is <em>very</em> good stuff</p>',
+				'this is very good stuff',
+				'This is a very good stuff.'
+			)
+		);
+	}
+
+	/**
+	 * Deleting the whole content of a tag would leave <em></em> behind and throw away
+	 * whatever the emphasis was for, so the fix is refused rather than applied.
+	 */
+	public function test_refuses_to_hollow_out_a_tag(): void {
+		$this->assertNull(
+			\Splecheh_InterpunctionReport::apply_fix(
+				'<p>this is <em>very</em> good stuff</p>',
+				'this is very good stuff',
+				'This is good stuff.'
+			)
+		);
+	}
+
+	public function test_only_the_first_occurrence_is_rewritten_across_markup(): void {
+		$this->assertSame(
+			'<p>A <b>b</b> c.</p><p>a <b>b</b> c</p>',
+			\Splecheh_InterpunctionReport::apply_fix( '<p>a <b>b</b> c</p><p>a <b>b</b> c</p>', 'a b c', 'A b c.' )
+		);
+	}
+
+	/**
+	 * The sentence carries the decoded text ("Tom & Jerry") while the source stores the
+	 * entity, so there is no safe mapping — reported as unapplied rather than guessed at.
+	 */
+	public function test_entities_in_the_sentence_are_refused(): void {
+		$this->assertNull(
+			\Splecheh_InterpunctionReport::apply_fix( '<p>Tom &amp; Jerry are here</p>', 'Tom & Jerry are here', 'Tom & Jerry are here.' )
+		);
+	}
+
+	/**
+	 * The character-level alignment is O(n×m); a malformed report must not turn a page
+	 * load into a minute of dynamic programming.
+	 */
+	public function test_absurdly_long_sentences_are_refused(): void {
+		$sentence = trim( str_repeat( 'word x ', 300 ) );
+
+		$this->assertNull(
+			\Splecheh_InterpunctionReport::apply_fix(
+				'<p>' . str_repeat( 'word <b>x</b> ', 300 ) . '</p>',
+				$sentence,
+				trim( str_repeat( 'Word x ', 300 ) )
+			)
+		);
+	}
+
+	/**
+	 * Known cosmetic quirk, pinned so it doesn't change unnoticed: punctuation the model
+	 * appends to a sentence ending inside a tag lands inside that tag — a bold full stop.
+	 */
+	public function test_trailing_punctuation_lands_inside_a_closing_tag(): void {
+		$this->assertSame(
+			'<p>And <strong>parents.</strong></p>',
+			\Splecheh_InterpunctionReport::apply_fix( '<p>and <strong>parents</strong></p>', 'and parents', 'And parents.' )
+		);
+	}
+
 	public function test_regex_metacharacters_in_the_sentence_are_literal(): void {
 		$content = '<p>Cost (approx.)  is 5 EUR ,plus tax.</p>';
 
