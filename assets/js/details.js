@@ -59,7 +59,42 @@
 				.then(function (r) { return r.json(); });
 		}
 
-		function applyFix(rows, action) {
+		// Every action here rewrites the same two things — the post content and the
+		// report JSON — by reading them, changing them and writing them back. Two in
+		// flight at once means the second one saves content it read before the first
+		// one's edit existed, silently dropping that fix. So one request at a time,
+		// page-wide: the triggering button says what it is doing (a Fix that saves a
+		// post and can re-run a whole check is slow enough to look like nothing
+		// happened), and every other action is disabled until it returns.
+		var ACTION_BUTTONS = '#splecheh-details-table button, #splecheh-bulk-apply, #splecheh-rerun-check, #splecheh-mark-complete';
+
+		function setBusy(button, busy, label) {
+			document.querySelectorAll(ACTION_BUTTONS).forEach(function (other) {
+				other.disabled = busy;
+			});
+
+			if (!button) return;
+
+			if (busy) {
+				button.dataset.splechehLabel = button.textContent;
+				button.textContent = label;
+
+				var spinner = document.createElement('span');
+				spinner.className = 'spinner is-active splecheh-inline-spinner';
+				spinner.style.cssText = 'float:none;margin:0 4px;vertical-align:middle;';
+				button.insertAdjacentElement('afterend', spinner);
+			} else {
+				if (button.dataset.splechehLabel) {
+					button.textContent = button.dataset.splechehLabel;
+					delete button.dataset.splechehLabel;
+				}
+
+				var running = button.nextElementSibling;
+				if (running && running.classList.contains('splecheh-inline-spinner')) running.remove();
+			}
+		}
+
+		function applyFix(rows, action, trigger) {
 			var items = rows.map(function (row) {
 				var input = row.querySelector('.splecheh-replacement');
 				return { index: row.dataset.index, replacement: input ? input.value.trim() : '' };
@@ -70,7 +105,10 @@
 				return;
 			}
 
+			setBusy(trigger, true, splechehDetails.i18n.fixing);
+
 			post(action || 'splecheh_fix_word', { items: JSON.stringify(items) }).then(function (data) {
+				setBusy(trigger, false);
 				if (!data.success) {
 					showMessage('error', splechehDetails.i18n.requestFailed);
 					return;
@@ -91,13 +129,18 @@
 					showMessage('success', text);
 				}
 			}).catch(function () {
+				setBusy(trigger, false);
 				showMessage('error', splechehDetails.i18n.requestFailed);
 			});
 		}
 
-		function applyIgnore(action, rows) {
+		function applyIgnore(action, rows, trigger) {
 			var indices = rows.map(function (row) { return row.dataset.index; });
+
+			setBusy(trigger, true, splechehDetails.i18n.working);
+
 			post(action, { indices: JSON.stringify(indices) }).then(function (data) {
+				setBusy(trigger, false);
 				if (!data.success) {
 					showMessage('error', splechehDetails.i18n.requestFailed);
 					return;
@@ -105,6 +148,7 @@
 				rows.forEach(markRowResolved);
 				showMessage('success', data.data.ignored + ' ' + splechehDetails.i18n.issuesUpdated);
 			}).catch(function () {
+				setBusy(trigger, false);
 				showMessage('error', splechehDetails.i18n.requestFailed);
 			});
 		}
@@ -155,13 +199,11 @@
 		if (rerunBtn) {
 			rerunBtn.addEventListener('click', function () {
 				var spinner = document.getElementById('splecheh-rerun-spinner');
-				rerunBtn.disabled = true;
-				rerunBtn.textContent = splechehDetails.i18n.rerunning;
+				setBusy(rerunBtn, true, splechehDetails.i18n.rerunning);
 				if (spinner) spinner.style.display = 'inline-block';
 
 				post('splecheh_details_rerun', {}).then(function (data) {
-					rerunBtn.disabled = false;
-					rerunBtn.textContent = splechehDetails.i18n.rerun;
+					setBusy(rerunBtn, false);
 					if (spinner) spinner.style.display = 'none';
 
 					if (!data.success) {
@@ -181,8 +223,7 @@
 						showMessage('warning', unresolvedCount + ' ' + splechehDetails.i18n.issuesFound);
 					}
 				}).catch(function () {
-					rerunBtn.disabled = false;
-					rerunBtn.textContent = splechehDetails.i18n.rerun;
+					setBusy(rerunBtn, false);
 					if (spinner) spinner.style.display = 'none';
 					showMessage('error', splechehDetails.i18n.requestFailed);
 				});
@@ -194,11 +235,11 @@
 		if (markCompleteBtn) {
 			markCompleteBtn.addEventListener('click', function () {
 				var spinner = document.getElementById('splecheh-mark-complete-spinner');
-				markCompleteBtn.disabled = true;
+				setBusy(markCompleteBtn, true, splechehDetails.i18n.working);
 				if (spinner) spinner.style.display = 'inline-block';
 
 				post('splecheh_mark_complete', {}).then(function (data) {
-					markCompleteBtn.disabled = false;
+					setBusy(markCompleteBtn, false);
 					if (spinner) spinner.style.display = 'none';
 
 					if (!data.success) {
@@ -210,7 +251,7 @@
 					renderIssues(data.data.errors);
 					showMessage('success', splechehDetails.i18n.markedComplete);
 				}).catch(function () {
-					markCompleteBtn.disabled = false;
+					setBusy(markCompleteBtn, false);
 					if (spinner) spinner.style.display = 'none';
 					showMessage('error', splechehDetails.i18n.requestFailed);
 				});
@@ -223,13 +264,13 @@
 			if (!row) return;
 
 			if (e.target.closest('.splecheh-fix-everywhere')) {
-				applyFix([row], 'splecheh_fix_everywhere');
+				applyFix([row], 'splecheh_fix_everywhere', e.target.closest('.splecheh-fix-everywhere'));
 			} else if (e.target.closest('.splecheh-fix')) {
-				applyFix([row]);
+				applyFix([row], null, e.target.closest('.splecheh-fix'));
 			} else if (e.target.closest('.splecheh-ignore-post')) {
-				applyIgnore('splecheh_ignore_in_post', [row]);
+				applyIgnore('splecheh_ignore_in_post', [row], e.target.closest('.splecheh-ignore-post'));
 			} else if (e.target.closest('.splecheh-ignore-always')) {
-				applyIgnore('splecheh_ignore_always', [row]);
+				applyIgnore('splecheh_ignore_always', [row], e.target.closest('.splecheh-ignore-always'));
 			}
 		});
 
@@ -263,13 +304,13 @@
 				}
 
 				if (action === 'fix') {
-					applyFix(rows);
+					applyFix(rows, null, bulkApply);
 				} else if (action === 'fix_everywhere') {
-					applyFix(rows, 'splecheh_fix_everywhere');
+					applyFix(rows, 'splecheh_fix_everywhere', bulkApply);
 				} else if (action === 'ignore_in_post') {
-					applyIgnore('splecheh_ignore_in_post', rows);
+					applyIgnore('splecheh_ignore_in_post', rows, bulkApply);
 				} else if (action === 'ignore_always') {
-					applyIgnore('splecheh_ignore_always', rows);
+					applyIgnore('splecheh_ignore_always', rows, bulkApply);
 				}
 			});
 		}

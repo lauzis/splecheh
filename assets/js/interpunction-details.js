@@ -49,7 +49,42 @@
 				.then(function (r) { return r.json(); });
 		}
 
-		function applyFix(rows) {
+		// Every action here rewrites the same two things — the post content and the
+		// report JSON — by reading them, changing them and writing them back. Two in
+		// flight at once means the second one saves content it read before the first
+		// one's edit existed, silently dropping that fix. So one request at a time,
+		// page-wide: the triggering button says what it is doing (a Fix saves the post
+		// and then re-runs Spell Check, which is slow enough to look like nothing
+		// happened), and every other action is disabled until it returns.
+		var ACTION_BUTTONS = '#splecheh-interpunction-details-table button, #splecheh-interpunction-bulk-apply, #splecheh-interpunction-rerun-check, #splecheh-interpunction-mark-complete';
+
+		function setBusy(button, busy, label) {
+			document.querySelectorAll(ACTION_BUTTONS).forEach(function (other) {
+				other.disabled = busy;
+			});
+
+			if (!button) return;
+
+			if (busy) {
+				button.dataset.splechehLabel = button.textContent;
+				button.textContent = label;
+
+				var spinner = document.createElement('span');
+				spinner.className = 'spinner is-active splecheh-inline-spinner';
+				spinner.style.cssText = 'float:none;margin:0 4px;vertical-align:middle;';
+				button.insertAdjacentElement('afterend', spinner);
+			} else {
+				if (button.dataset.splechehLabel) {
+					button.textContent = button.dataset.splechehLabel;
+					delete button.dataset.splechehLabel;
+				}
+
+				var running = button.nextElementSibling;
+				if (running && running.classList.contains('splecheh-inline-spinner')) running.remove();
+			}
+		}
+
+		function applyFix(rows, trigger) {
 			var items = rows.map(function (row) {
 				var textarea = row.querySelector('.splecheh-interpunction-fixed');
 				return { index: row.dataset.index, fixed: textarea ? textarea.value.trim() : '' };
@@ -60,7 +95,10 @@
 				return;
 			}
 
+			setBusy(trigger, true, splechehInterpunctionDetails.i18n.fixing);
+
 			post('splecheh_interpunction_fix', { items: JSON.stringify(items) }).then(function (data) {
+				setBusy(trigger, false);
 				if (!data.success) {
 					showMessage('error', splechehInterpunctionDetails.i18n.requestFailed);
 					return;
@@ -90,13 +128,18 @@
 					showMessage('success', text);
 				}
 			}).catch(function () {
+				setBusy(trigger, false);
 				showMessage('error', splechehInterpunctionDetails.i18n.requestFailed);
 			});
 		}
 
-		function applyIgnore(action, rows) {
+		function applyIgnore(action, rows, trigger) {
 			var indices = rows.map(function (row) { return row.dataset.index; });
+
+			setBusy(trigger, true, splechehInterpunctionDetails.i18n.working);
+
 			post(action, { indices: JSON.stringify(indices) }).then(function (data) {
+				setBusy(trigger, false);
 				if (!data.success) {
 					showMessage('error', splechehInterpunctionDetails.i18n.requestFailed);
 					return;
@@ -104,6 +147,7 @@
 				rows.forEach(markRowResolved);
 				showMessage('success', data.data.ignored + ' ' + splechehInterpunctionDetails.i18n.issuesUpdated);
 			}).catch(function () {
+				setBusy(trigger, false);
 				showMessage('error', splechehInterpunctionDetails.i18n.requestFailed);
 			});
 		}
@@ -142,13 +186,11 @@
 		if (rerunBtn) {
 			rerunBtn.addEventListener('click', function () {
 				var spinner = document.getElementById('splecheh-interpunction-rerun-spinner');
-				rerunBtn.disabled = true;
-				rerunBtn.textContent = splechehInterpunctionDetails.i18n.rerunning;
+				setBusy(rerunBtn, true, splechehInterpunctionDetails.i18n.rerunning);
 				if (spinner) spinner.style.display = 'inline-block';
 
 				post('splecheh_interpunction_details_rerun', {}).then(function (data) {
-					rerunBtn.disabled = false;
-					rerunBtn.textContent = splechehInterpunctionDetails.i18n.rerun;
+					setBusy(rerunBtn, false);
 					if (spinner) spinner.style.display = 'none';
 
 					if (!data.success) {
@@ -168,8 +210,7 @@
 						showMessage('warning', unresolvedCount + ' ' + splechehInterpunctionDetails.i18n.issuesFound);
 					}
 				}).catch(function () {
-					rerunBtn.disabled = false;
-					rerunBtn.textContent = splechehInterpunctionDetails.i18n.rerun;
+					setBusy(rerunBtn, false);
 					if (spinner) spinner.style.display = 'none';
 					showMessage('error', splechehInterpunctionDetails.i18n.requestFailed);
 				});
@@ -181,11 +222,11 @@
 		if (markCompleteBtn) {
 			markCompleteBtn.addEventListener('click', function () {
 				var spinner = document.getElementById('splecheh-interpunction-mark-complete-spinner');
-				markCompleteBtn.disabled = true;
+				setBusy(markCompleteBtn, true, splechehInterpunctionDetails.i18n.working);
 				if (spinner) spinner.style.display = 'inline-block';
 
 				post('splecheh_interpunction_mark_complete', {}).then(function (data) {
-					markCompleteBtn.disabled = false;
+					setBusy(markCompleteBtn, false);
 					if (spinner) spinner.style.display = 'none';
 
 					if (!data.success) {
@@ -197,7 +238,7 @@
 					renderIssues(data.data.issues);
 					showMessage('success', splechehInterpunctionDetails.i18n.markedComplete);
 				}).catch(function () {
-					markCompleteBtn.disabled = false;
+					setBusy(markCompleteBtn, false);
 					if (spinner) spinner.style.display = 'none';
 					showMessage('error', splechehInterpunctionDetails.i18n.requestFailed);
 				});
@@ -210,9 +251,9 @@
 			if (!row) return;
 
 			if (e.target.closest('.splecheh-fix')) {
-				applyFix([row]);
+				applyFix([row], e.target.closest('.splecheh-fix'));
 			} else if (e.target.closest('.splecheh-ignore-post')) {
-				applyIgnore('splecheh_interpunction_ignore_in_post', [row]);
+				applyIgnore('splecheh_interpunction_ignore_in_post', [row], e.target.closest('.splecheh-ignore-post'));
 			}
 		});
 
@@ -246,9 +287,9 @@
 				}
 
 				if (action === 'fix') {
-					applyFix(rows);
+					applyFix(rows, bulkApply);
 				} else if (action === 'ignore_in_post') {
-					applyIgnore('splecheh_interpunction_ignore_in_post', rows);
+					applyIgnore('splecheh_interpunction_ignore_in_post', rows, bulkApply);
 				}
 			});
 		}

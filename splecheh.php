@@ -760,6 +760,8 @@ function splecheh_enqueue_details_assets(): void {
 				'noIssues'       => __( 'No spelling issues found.', 'splecheh' ),
 				'issuesFound'    => __( 'spelling issue(s) found.', 'splecheh' ),
 				'fix'            => __( 'Fix', 'splecheh' ),
+				'fixing'         => __( 'Fixing…', 'splecheh' ),
+				'working'        => __( 'Working…', 'splecheh' ),
 				'ignoreInPost'   => __( 'Ignore in post', 'splecheh' ),
 				'ignoreAlways'   => __( 'Ignore always', 'splecheh' ),
 				'fixEverywhere'  => $language !== ''
@@ -908,6 +910,8 @@ function splecheh_enqueue_interpunction_details_assets(): void {
 				'noIssues'      => __( 'No interpunction issues found.', 'splecheh' ),
 				'issuesFound'   => __( 'interpunction issue(s) found.', 'splecheh' ),
 				'fix'           => __( 'Fix', 'splecheh' ),
+				'fixing'        => __( 'Fixing…', 'splecheh' ),
+				'working'       => __( 'Working…', 'splecheh' ),
 				'ignoreInPost'  => __( 'Ignore in post', 'splecheh' ),
 				'markedComplete' => __( 'Marked as complete — all remaining issues resolved.', 'splecheh' ),
 				'fixNotApplied' => __( 'fix(es) could NOT be written into the post and are left unresolved — the sentence no longer matches the post content (edited since the check, or split up by inline formatting). Re-run the Interpunction Check for this post and try again, or edit the sentence by hand.', 'splecheh' ),
