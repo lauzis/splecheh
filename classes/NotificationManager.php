@@ -4,102 +4,107 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+/**
+ * Splecheh's admin notice entry point.
+ *
+ * The implementation lives in the shared lauzis/wp-notices package; this class
+ * is a thin facade that keeps Splecheh's own API and screen scoping, so the
+ * call sites throughout the plugin are unchanged.
+ */
 class Splecheh_NotificationManager {
 
-	private const DISMISSED_OPTION = 'splecheh_dismissed_notifications';
+	private const SLUG = 'splecheh';
 
-	/** @var Splecheh_Notification[] */
-	private static array $notifications = [];
-
-	public static function register( Splecheh_Notification $notification ): void {
-		self::$notifications[] = $notification;
-	}
-
-	public static function render(): void {
-		if ( ! self::is_plugin_screen() ) {
-			return;
+	/**
+	 * Returns the shared notice manager, or null when the wp-notices package is
+	 * not installed. Splecheh already treats a missing vendor/ as a supported
+	 * state, so notices degrade to silence rather than a fatal.
+	 *
+	 * Also the only place the library gets loaded: the registry boots on first
+	 * use, so nothing may reference \Lauzis\WpNotices\* before calling this.
+	 *
+	 * @return \Lauzis\WpNotices\Notices|null
+	 */
+	private static function manager() {
+		if ( ! class_exists( 'WpNotices_Registry' ) ) {
+			return null;
 		}
 
-		$dismissed = (array) get_option( self::DISMISSED_OPTION, [] );
-
-		foreach ( self::$notifications as $notification ) {
-			if ( $notification->mode === 'one-time' && in_array( $notification->id, $dismissed, true ) ) {
-				continue;
-			}
-			self::render_notification( $notification );
-		}
-	}
-
-	private static function render_notification( Splecheh_Notification $notification ): void {
-		$type_class = 'notice-' . esc_attr( $notification->type );
-		?>
-		<div class="notice <?php echo esc_attr( $type_class ); ?> splecheh-toast"
-			 data-splecheh-id="<?php echo esc_attr( $notification->id ); ?>"
-			 data-splecheh-mode="<?php echo esc_attr( $notification->mode ); ?>">
-			<p><?php echo wp_kses_post( $notification->message ); ?></p>
-			<button type="button" class="notice-dismiss">
-				<span class="screen-reader-text"><?php esc_html_e( 'Dismiss this notice.', 'splecheh' ); ?></span>
-			</button>
-		</div>
-		<?php
-	}
-
-	public static function enqueue_assets(): void {
-		if ( ! self::is_plugin_screen() ) {
-			return;
-		}
-
-		wp_enqueue_style(
-			'splecheh-notifications',
-			plugins_url( 'assets/css/notifications.css', SPLECHEH_PLUGIN_FILE ),
-			[],
-			SPLECHEH_VERSION
-		);
-
-		wp_enqueue_script(
-			'splecheh-notifications',
-			plugins_url( 'assets/js/notifications.js', SPLECHEH_PLUGIN_FILE ),
-			[],
-			SPLECHEH_VERSION,
-			true
-		);
-
-		wp_localize_script(
-			'splecheh-notifications',
-			'splechehNotifications',
+		return WpNotices_Registry::notices(
+			self::SLUG,
 			[
-				'ajaxUrl' => admin_url( 'admin-ajax.php' ),
-				'nonce'   => wp_create_nonce( 'splecheh_dismiss_notification' ),
+				'store'      => 'option',
+				'screen'     => [ self::class, 'is_plugin_screen' ],
+				'capability' => 'edit_posts',
 			]
 		);
 	}
 
-	public static function handle_dismiss(): void {
-		check_ajax_referer( 'splecheh_dismiss_notification', 'nonce' );
+	/** Registers the hooks the shared manager needs. */
+	public static function init(): void {
+		$manager = self::manager();
 
-		if ( ! current_user_can( 'edit_posts' ) ) {
-			wp_send_json_error( 'Insufficient permissions', 403 );
+		if ( $manager ) {
+			$manager->boot();
 		}
-
-		$id = sanitize_key( wp_unslash( $_POST['notification_id'] ?? '' ) );
-		if ( empty( $id ) ) {
-			wp_send_json_error( 'Invalid notification ID', 400 );
-		}
-
-		$dismissed = (array) get_option( self::DISMISSED_OPTION, [] );
-		if ( ! in_array( $id, $dismissed, true ) ) {
-			$dismissed[] = $id;
-			update_option( self::DISMISSED_OPTION, $dismissed, false );
-		}
-
-		wp_send_json_success();
 	}
 
-	private static function is_plugin_screen(): bool {
+	public static function register( Splecheh_Notification $notification ): void {
+		// Resolve the manager first: it boots the library, so the Notice class
+		// below is guaranteed to exist.
+		$manager = self::manager();
+
+		if ( ! $manager ) {
+			return;
+		}
+
+		$manager->add(
+			new \Lauzis\WpNotices\Notice(
+				$notification->id,
+				$notification->message,
+				$notification->type,
+				'one-time' === $notification->mode
+					? \Lauzis\WpNotices\Notice::ONCE
+					: \Lauzis\WpNotices\Notice::SESSION
+			)
+		);
+	}
+
+	/**
+	 * Retained for the previous bootstrap order, where render() and
+	 * enqueue_assets() were hooked directly. The shared manager hooks itself in
+	 * init(), so these are no longer wired up.
+	 *
+	 * @deprecated Use init().
+	 */
+	public static function render(): void {
+		$manager = self::manager();
+
+		if ( $manager ) {
+			$manager->render();
+		}
+	}
+
+	/** @deprecated Use init(). */
+	public static function enqueue_assets(): void {
+		$manager = self::manager();
+
+		if ( $manager ) {
+			$manager->enqueue();
+		}
+	}
+
+	public static function is_plugin_screen(): bool {
+		if ( ! function_exists( 'get_current_screen' ) ) {
+			return false;
+		}
+
 		$screen = get_current_screen();
+
 		if ( ! $screen ) {
 			return false;
 		}
-		return $screen->id === 'toplevel_page_splecheh' || $screen->parent_base === 'splecheh';
+
+		return 'toplevel_page_splecheh' === $screen->id || 'splecheh' === $screen->parent_base;
 	}
 }

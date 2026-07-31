@@ -100,15 +100,14 @@ function splecheh_deactivate(): void {
 	Splecheh_InterpunctionCron::deactivate();
 }
 
-add_action( 'admin_notices', [ 'Splecheh_NotificationManager', 'render' ] );
-add_action( 'admin_enqueue_scripts', [ 'Splecheh_NotificationManager', 'enqueue_assets' ] );
+// Registers admin_notices, admin_enqueue_scripts and the dismissal handler.
+Splecheh_NotificationManager::init();
 add_action( 'admin_enqueue_scripts', 'splecheh_enqueue_spellcheck_assets' );
 add_action( 'admin_enqueue_scripts', 'splecheh_enqueue_details_assets' );
 add_action( 'admin_enqueue_scripts', 'splecheh_enqueue_interpunction_assets' );
 add_action( 'admin_enqueue_scripts', 'splecheh_enqueue_interpunction_details_assets' );
 add_action( 'admin_enqueue_scripts', 'splecheh_enqueue_settings_assets' );
 add_action( 'admin_enqueue_scripts', 'splecheh_enqueue_split_test_assets' );
-add_action( 'wp_ajax_splecheh_dismiss_notification', [ 'Splecheh_NotificationManager', 'handle_dismiss' ] );
 add_action( 'wp_ajax_splecheh_run', 'splecheh_ajax_run_spellcheck' );
 add_action( 'wp_ajax_splecheh_bulk_run', 'splecheh_ajax_bulk_run' );
 add_action( 'wp_ajax_splecheh_run_now', 'splecheh_ajax_run_now' );

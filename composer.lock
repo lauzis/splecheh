@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "2cd3b6450d4fbd13cdfe62ca8e831233",
+    "content-hash": "7b9e3a8f482396903402c97ab0767117",
     "packages": [
         {
             "name": "htmlburger/carbon-fields",
@@ -183,6 +183,44 @@
                 "issues": "https://github.com/lauzis/wp-logs/issues"
             },
             "time": "2026-07-31T21:08:02+00:00"
+        },
+        {
+            "name": "lauzis/wp-notices",
+            "version": "v1.0.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/lauzis/wp-notices.git",
+                "reference": "4484f61fe324ccba22b0364ce204ae688ce7cff0"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/lauzis/wp-notices/zipball/4484f61fe324ccba22b0364ce204ae688ce7cff0",
+                "reference": "4484f61fe324ccba22b0364ce204ae688ce7cff0",
+                "shasum": ""
+            },
+            "require": {
+                "php": ">=7.4"
+            },
+            "type": "library",
+            "autoload": {
+                "files": [
+                    "bootstrap.php"
+                ]
+            },
+            "scripts": {
+                "test": [
+                    "php tests/run.php"
+                ]
+            },
+            "license": [
+                "MIT"
+            ],
+            "description": "Shared admin notices and toast messages for WordPress plugins, with version-gated loading so several plugins can bundle it safely.",
+            "support": {
+                "source": "https://github.com/lauzis/wp-notices/tree/v1.0.0",
+                "issues": "https://github.com/lauzis/wp-notices/issues"
+            },
+            "time": "2026-07-31T21:17:57+00:00"
         },
         {
             "name": "nyholm/psr7",
