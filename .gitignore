@@ -1,4 +1,5 @@
-composer.lock
+# composer.lock is committed: this is a plugin, not a library, so the shipped
+# vendor/ and the lock file should describe the same resolved dependency set.
 .phpunit.result.cache
 tools/.run/
 logs/

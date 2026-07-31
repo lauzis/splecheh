@@ -3,10 +3,17 @@
     "description": "WordPress spellcheck plugin",
     "type": "wordpress-plugin",
     "license": "MIT",
+    "repositories": [
+        {
+            "type": "vcs",
+            "url": "https://github.com/lauzis/wp-logs"
+        }
+    ],
     "require": {
         "php": ">=8.0",
         "htmlburger/carbon-fields": "^3.6",
-        "tigitz/php-spellchecker": "^0.8.0"
+        "tigitz/php-spellchecker": "^0.8.0",
+        "lauzis/wp-logs": "^1.0"
     },
     "config": {
         "optimize-autoloader": true

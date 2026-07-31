@@ -16,8 +16,23 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 define( 'SPLECHEH_VERSION', '0.28.0' );
 define( 'SPLECHEH_DIR', plugin_dir_path( __FILE__ ) );
-define( 'SPLECHEH_LOG_PATH', SPLECHEH_DIR . 'logs' );
 define( 'SPLECHEH_PLUGIN_FILE', __FILE__ );
+
+if ( ! defined( 'SPLECHEH_LOG_PATH' ) ) {
+	// Logs live under uploads/, not inside the plugin directory: WordPress
+	// deletes and re-extracts the plugin folder on every update, which used to
+	// destroy the log history.
+	$splecheh_uploads = wp_upload_dir();
+	define( 'SPLECHEH_LOG_PATH', untrailingslashit( str_replace( '\\', '/', $splecheh_uploads['basedir'] ) . '/splecheh-logs' ) );
+	unset( $splecheh_uploads );
+}
+
+// Composer dependencies (lauzis/wp-logs, Carbon Fields, the spellchecker).
+// Loaded up front so logging is available during bootstrap; Carbon Fields is
+// still booted later, on after_setup_theme.
+if ( file_exists( SPLECHEH_DIR . 'vendor/autoload.php' ) ) {
+	require_once SPLECHEH_DIR . 'vendor/autoload.php';
+}
 
 require_once SPLECHEH_DIR . 'classes/Logs.php';
 require_once SPLECHEH_DIR . 'classes/Notification.php';
@@ -40,10 +55,10 @@ add_action( Splecheh_InterpunctionCron::HOOK, [ 'Splecheh_InterpunctionCron', 'r
 add_action(
 	'after_setup_theme',
 	function (): void {
-		if ( ! file_exists( SPLECHEH_DIR . 'vendor/autoload.php' ) ) {
+		// Composer autoload runs at the top of this file; bail if vendor/ is absent.
+		if ( ! class_exists( '\\Carbon_Fields\\Carbon_Fields' ) ) {
 			return;
 		}
-		require_once SPLECHEH_DIR . 'vendor/autoload.php';
 		\Carbon_Fields\Carbon_Fields::boot();
 
 		if ( ! \Composer\InstalledVersions::isInstalled( 'tigitz/php-spellchecker' ) ) {
