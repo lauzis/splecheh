@@ -7,7 +7,6 @@ namespace Composer\Autoload;
 class ComposerStaticInitd7df96238a0b7030894b0ddffe3a40ed
 {
     public static $files = array (
-        '2607275bf2453ac5427a498df4804ddb' => __DIR__ . '/..' . '/lauzis/wp-plugin-packages/bootstrap.php',
         '9b9cd57dc1a77520cafde0b2a9ee1b13' => __DIR__ . '/..' . '/tigitz/php-spellchecker/src/Text/functions.php',
         '65ef39dc9f834cda71230ca2e15f84e6' => __DIR__ . '/..' . '/tigitz/php-spellchecker/src/Utils/php-functions.php',
     );

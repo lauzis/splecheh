@@ -32,6 +32,9 @@ if ( ! defined( 'SPLECHEH_LOG_PATH' ) ) {
 // still booted later, on after_setup_theme.
 if ( file_exists( SPLECHEH_DIR . 'vendor/autoload.php' ) ) {
 	require_once SPLECHEH_DIR . 'vendor/autoload.php';
+	// Required explicitly: Composer's files autoload runs only one copy of this
+	// package per request, so the version gate would never see the others.
+	require_once SPLECHEH_DIR . 'vendor/lauzis/wp-plugin-packages/bootstrap.php';
 }
 
 require_once SPLECHEH_DIR . 'classes/Logs.php';
