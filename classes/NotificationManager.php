@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Splecheh's admin notice entry point.
  *
- * The implementation lives in the shared lauzis/wp-notices package; this class
+ * The implementation lives in the shared lauzis/wp-plugin-packages package; this class
  * is a thin facade that keeps Splecheh's own API and screen scoping, so the
  * call sites throughout the plugin are unchanged.
  */
@@ -16,21 +16,21 @@ class Splecheh_NotificationManager {
 	private const SLUG = 'splecheh';
 
 	/**
-	 * Returns the shared notice manager, or null when the wp-notices package is
+	 * Returns the shared notice manager, or null when the wp-plugin-packages package is
 	 * not installed. Splecheh already treats a missing vendor/ as a supported
 	 * state, so notices degrade to silence rather than a fatal.
 	 *
 	 * Also the only place the library gets loaded: the registry boots on first
-	 * use, so nothing may reference \Lauzis\WpNotices\* before calling this.
+	 * use, so nothing may reference \Lauzis\WpPackages\Notices\* before calling this.
 	 *
-	 * @return \Lauzis\WpNotices\Notices|null
+	 * @return \Lauzis\WpPackages\Notices\Notices|null
 	 */
 	private static function manager() {
-		if ( ! class_exists( 'WpNotices_Registry' ) ) {
+		if ( ! class_exists( 'WpPackages_Registry' ) ) {
 			return null;
 		}
 
-		return WpNotices_Registry::notices(
+		return WpPackages_Registry::notices(
 			self::SLUG,
 			[
 				'store'      => 'option',
@@ -59,13 +59,13 @@ class Splecheh_NotificationManager {
 		}
 
 		$manager->add(
-			new \Lauzis\WpNotices\Notice(
+			new \Lauzis\WpPackages\Notices\Notice(
 				$notification->id,
 				$notification->message,
 				$notification->type,
 				'one-time' === $notification->mode
-					? \Lauzis\WpNotices\Notice::ONCE
-					: \Lauzis\WpNotices\Notice::SESSION
+					? \Lauzis\WpPackages\Notices\Notice::ONCE
+					: \Lauzis\WpPackages\Notices\Notice::SESSION
 			)
 		);
 	}

@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Splecheh's logging entry point.
  *
- * The implementation lives in the shared lauzis/wp-logs package; this class is
+ * The implementation lives in the shared lauzis/wp-plugin-packages package; this class is
  * a thin facade that keeps Splecheh's own API, so the call sites throughout the
  * plugin are unchanged.
  */
@@ -20,19 +20,19 @@ class Splecheh_Logs {
 	private const AUTO_APPLY_CHANNEL = 'auto-apply';
 
 	/**
-	 * Returns the shared logger, or null when the wp-logs package is not
+	 * Returns the shared logger, or null when the wp-plugin-packages package is not
 	 * installed. Splecheh already treats a missing vendor/ as a supported state
 	 * (it shows an admin notice), so logging degrades to a no-op rather than a
 	 * fatal.
 	 *
-	 * @return \Lauzis\WpLogs\Logger|null
+	 * @return \Lauzis\WpPackages\Logs\Logger|null
 	 */
 	private static function logger() {
-		if ( ! class_exists( 'WpLogs_Registry' ) ) {
+		if ( ! class_exists( 'WpPackages_Registry' ) ) {
 			return null;
 		}
 
-		return WpLogs_Registry::logger(
+		return WpPackages_Registry::logger(
 			self::SLUG,
 			[
 				'dir'     => SPLECHEH_LOG_PATH,

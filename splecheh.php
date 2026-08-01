@@ -27,7 +27,7 @@ if ( ! defined( 'SPLECHEH_LOG_PATH' ) ) {
 	unset( $splecheh_uploads );
 }
 
-// Composer dependencies (lauzis/wp-logs, Carbon Fields, the spellchecker).
+// Composer dependencies (lauzis/wp-plugin-packages, Carbon Fields, the spellchecker).
 // Loaded up front so logging is available during bootstrap; Carbon Fields is
 // still booted later, on after_setup_theme.
 if ( file_exists( SPLECHEH_DIR . 'vendor/autoload.php' ) ) {

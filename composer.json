@@ -6,19 +6,14 @@
     "repositories": [
         {
             "type": "vcs",
-            "url": "https://github.com/lauzis/wp-logs"
-        },
-        {
-            "type": "vcs",
-            "url": "https://github.com/lauzis/wp-notices"
+            "url": "https://github.com/lauzis/wp-plugin-packages"
         }
     ],
     "require": {
         "php": ">=8.0",
         "htmlburger/carbon-fields": "^3.6",
         "tigitz/php-spellchecker": "^0.8.0",
-        "lauzis/wp-logs": "^1.0",
-        "lauzis/wp-notices": "^1.0"
+        "lauzis/wp-plugin-packages": "^1.0"
     },
     "config": {
         "optimize-autoloader": true

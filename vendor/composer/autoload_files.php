@@ -6,8 +6,7 @@ $vendorDir = dirname(__DIR__);
 $baseDir = dirname($vendorDir);
 
 return array(
-    '1a073ceb8caada98150cc137b828702d' => $vendorDir . '/lauzis/wp-logs/bootstrap.php',
-    'a2d3091dd9ce98bbcc97487ce8e6b85b' => $vendorDir . '/lauzis/wp-notices/bootstrap.php',
+    '2607275bf2453ac5427a498df4804ddb' => $vendorDir . '/lauzis/wp-plugin-packages/bootstrap.php',
     '9b9cd57dc1a77520cafde0b2a9ee1b13' => $vendorDir . '/tigitz/php-spellchecker/src/Text/functions.php',
     '65ef39dc9f834cda71230ca2e15f84e6' => $vendorDir . '/tigitz/php-spellchecker/src/Utils/php-functions.php',
 );
