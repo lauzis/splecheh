@@ -9,6 +9,11 @@
 
 require dirname( __DIR__ ) . '/vendor/autoload.php';
 
+// Required explicitly, exactly as the plugin bootstrap does: the shared package
+// is deliberately not on Composer's files autoload, because that runs only one
+// copy per request across all plugins.
+require dirname( __DIR__ ) . '/vendor/lauzis/wp-plugin-packages/bootstrap.php';
+
 define( 'ABSPATH', __DIR__ . '/' );
 define( 'SPLECHEH_VERSION', '0.14.0-test' );
 define( 'SPLECHEH_LOG_PATH', sys_get_temp_dir() . '/splecheh-tests/logs' );
