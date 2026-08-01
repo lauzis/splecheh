@@ -170,18 +170,97 @@ class Splecheh_InterpunctionBackend {
 	 */
 	private static function check_batch( array $sentences, string $language, ?string $command_override ) {
 		$prompt = str_replace( '{language}', $language, self::get_prompt() );
+		$client = self::client( $command_override );
 
-		switch ( self::get_type() ) {
-			case 'openai':
-				return self::check_openai( $sentences, $prompt );
-			case 'claude':
-				return self::check_claude( $sentences, $prompt );
-			case 'gemini':
-				return self::check_gemini( $sentences, $prompt );
-			case 'commandline':
-			default:
-				return self::check_commandline( $sentences, $language, $prompt, $command_override );
+		if ( ! $client ) {
+			return new WP_Error( 'interpunction_no_client', __( 'The shared LLM component is unavailable.', 'splecheh' ) );
 		}
+
+		$is_commandline = 'commandline' === $client->provider();
+		$command        = $command_override ?? self::get_command();
+
+		if ( $is_commandline ) {
+			Splecheh_Logs::addLog(
+				'interpunction',
+				'Interpunction commandline started',
+				[ 'command' => self::with_wrapper_timeout( $command, self::get_command_timeout() ), 'timeout' => self::get_command_timeout() ]
+			);
+		}
+
+		// The provider call is shared; the prompt, the required response shape
+		// and the parsing below are Splecheh's own.
+		$text = $client->complete(
+			$prompt . ' ' . self::response_format_instructions(),
+			$sentences,
+			[ 'language' => $language ]
+		);
+
+		if ( is_wp_error( $text ) ) {
+			// Keep the historical wording: these lines are what operators grep for.
+			Splecheh_Logs::addLog(
+				'interpunction',
+				$is_commandline ? 'Interpunction commandline failed' : 'Interpunction request failed',
+				$is_commandline
+					? [ 'command' => $command, 'error' => $text->get_error_message() ]
+					: [ 'error' => $text->get_error_message() ]
+			);
+
+			return $text;
+		}
+
+		return self::parse_results( $text );
+	}
+
+	/**
+	 * Builds the shared LLM client from this plugin's own settings.
+	 *
+	 * The settings stay where they are — Splecheh's field names and stored
+	 * options are unchanged — and are handed to the component per call, so a
+	 * settings change takes effect immediately.
+	 *
+	 * @param string|null $command_override Overrides the configured command; used by tests.
+	 * @return \Lauzis\WpPackages\Llm\Client|null
+	 */
+	private static function client( ?string $command_override = null ) {
+		if ( ! class_exists( '\\Lauzis\\WpPackages\\Llm\\Client' ) ) {
+			if ( ! class_exists( 'WpPackages_Registry' ) ) {
+				return null;
+			}
+
+			WpPackages_Registry::boot();
+
+			if ( ! class_exists( '\\Lauzis\\WpPackages\\Llm\\Client' ) ) {
+				return null;
+			}
+		}
+
+		return new \Lauzis\WpPackages\Llm\Client(
+			'splecheh',
+			[
+				'settings'    => [
+					'llm_provider'   => self::get_type(),
+					'llm_access_key' => self::get_access_key(),
+					'llm_endpoint'   => self::get_raw_endpoint(),
+					'llm_command'    => $command_override ?? self::get_command(),
+					'llm_timeout'    => self::get_command_timeout(),
+				],
+				// Splecheh's documented wrapper contract sends the work under
+				// "sentences"; scripts in the wild expect that key.
+				'payload_key' => 'sentences',
+				'models'      => [
+					'openai' => (string) apply_filters( 'splecheh_interpunction_openai_model', 'gpt-4o-mini' ),
+					'claude' => (string) apply_filters( 'splecheh_interpunction_claude_model', 'claude-3-5-haiku-latest' ),
+					'gemini' => (string) apply_filters( 'splecheh_interpunction_gemini_model', 'gemini-1.5-flash' ),
+				],
+			]
+		);
+	}
+
+	/** The configured endpoint override, empty when none is set. */
+	private static function get_raw_endpoint(): string {
+		return function_exists( 'carbon_get_theme_option' )
+			? (string) carbon_get_theme_option( 'splecheh_interpunction_endpoint' )
+			: '';
 	}
 
 	public static function get_type(): string {
@@ -298,14 +377,6 @@ class Splecheh_InterpunctionBackend {
 		return trim( $command );
 	}
 
-	private static function get_endpoint( string $default ): string {
-		if ( ! function_exists( 'carbon_get_theme_option' ) ) {
-			return $default;
-		}
-		$endpoint = (string) carbon_get_theme_option( 'splecheh_interpunction_endpoint' );
-		return $endpoint !== '' ? $endpoint : $default;
-	}
-
 	private static function get_access_key(): string {
 		return function_exists( 'carbon_get_theme_option' ) ? (string) carbon_get_theme_option( 'splecheh_interpunction_access_key' ) : '';
 	}
@@ -329,197 +400,6 @@ class Splecheh_InterpunctionBackend {
 		$wrapper_timeout = max( 1, (int) round( $timeout ) - self::WRAPPER_TIMEOUT_MARGIN );
 
 		return $command . ' --timeout ' . $wrapper_timeout;
-	}
-
-	/**
-	 * Calls the locally-configured shell command, appending {language, prompt, sentences}
-	 * as a single shell-escaped JSON parameter and expecting a JSON array of
-	 * {original, fixed, explanation} on stdout. Keeps API keys out of WordPress: the
-	 * script owns its own credentials. See bin/interpunction-check.sh for a reference
-	 * implementation of this contract.
-	 *
-	 * Runs via Symfony Process (rather than a raw proc_open/stream_get_contents loop)
-	 * with an explicit timeout, so a command that blocks on stdin or fills a pipe
-	 * buffer fails fast with a clear WP_Error instead of hanging the request.
-	 *
-	 * @param string[]    $sentences
-	 * @param string|null $command Overrides the configured command; used by tests.
-	 * @return array|WP_Error
-	 */
-	private static function check_commandline( array $sentences, string $language, string $prompt, ?string $command = null ) {
-		$command = trim( $command ?? self::get_command() );
-		if ( $command === '' ) {
-			return new WP_Error( 'interpunction_no_command', __( 'No commandline command is configured for the Interpunction Check.', 'splecheh' ) );
-		}
-
-		$payload = (string) wp_json_encode(
-			[
-				'language'  => $language,
-				'prompt'    => $prompt,
-				'sentences' => $sentences,
-			]
-		);
-
-		$timeout = self::get_command_timeout();
-		$command = self::with_wrapper_timeout( $command, $timeout );
-
-		Splecheh_Logs::addLog( 'interpunction', 'Interpunction commandline started', [ 'command' => $command, 'timeout' => $timeout ] );
-
-		try {
-			$process = Process::fromShellCommandline( $command . ' ' . escapeshellarg( $payload ) );
-			$process->setTimeout( $timeout );
-			$exit_code = $process->run();
-		} catch ( \Throwable $exception ) {
-			Splecheh_Logs::addLog( 'interpunction', 'Interpunction commandline failed', [ 'command' => $command, 'error' => $exception->getMessage() ] );
-			return new WP_Error( 'interpunction_command_failed', $exception->getMessage() );
-		}
-
-		if ( $exit_code !== 0 ) {
-			$error_message = sprintf(
-				/* translators: 1: exit code, 2: stderr output */
-				__( 'Interpunction commandline exited with code %1$d: %2$s', 'splecheh' ),
-				$exit_code,
-				trim( $process->getErrorOutput() )
-			);
-			Splecheh_Logs::addLog( 'interpunction', 'Interpunction commandline failed', [ 'command' => $command, 'error' => $error_message ] );
-			return new WP_Error( 'interpunction_command_failed', $error_message );
-		}
-
-		return self::parse_results( $process->getOutput() );
-	}
-
-	/**
-	 * Minimal OpenAI Chat Completions call. Kept as a small wp_remote_post request rather
-	 * than a composer SDK so the report/UI layer doesn't depend on a specific client library.
-	 *
-	 * @param string[] $sentences
-	 * @return array|WP_Error
-	 */
-	private static function check_openai( array $sentences, string $prompt ) {
-		$access_key = self::get_access_key();
-		if ( $access_key === '' ) {
-			return new WP_Error( 'interpunction_no_access_key', __( 'No OpenAI access key is configured for the Interpunction Check.', 'splecheh' ) );
-		}
-
-		$response = wp_remote_post(
-			self::get_endpoint( 'https://api.openai.com/v1/chat/completions' ),
-			[
-				'headers' => [
-					'Authorization' => 'Bearer ' . $access_key,
-					'Content-Type'  => 'application/json',
-				],
-				'body'    => wp_json_encode(
-					[
-						'model'            => apply_filters( 'splecheh_interpunction_openai_model', 'gpt-4o-mini' ),
-						'messages'         => [
-							[
-								'role'    => 'system',
-								'content' => $prompt . ' ' . self::response_format_instructions(),
-							],
-							[
-								'role'    => 'user',
-								'content' => (string) wp_json_encode( $sentences ),
-							],
-						],
-						'response_format'  => [ 'type' => 'json_object' ],
-					]
-				),
-				'timeout' => 60,
-			]
-		);
-
-		if ( is_wp_error( $response ) ) {
-			return $response;
-		}
-
-		$data = json_decode( (string) wp_remote_retrieve_body( $response ), true );
-		return self::parse_results( (string) ( $data['choices'][0]['message']['content'] ?? '' ) );
-	}
-
-	/**
-	 * Minimal Anthropic Messages API call.
-	 *
-	 * @param string[] $sentences
-	 * @return array|WP_Error
-	 */
-	private static function check_claude( array $sentences, string $prompt ) {
-		$access_key = self::get_access_key();
-		if ( $access_key === '' ) {
-			return new WP_Error( 'interpunction_no_access_key', __( 'No Claude access key is configured for the Interpunction Check.', 'splecheh' ) );
-		}
-
-		$response = wp_remote_post(
-			self::get_endpoint( 'https://api.anthropic.com/v1/messages' ),
-			[
-				'headers' => [
-					'x-api-key'         => $access_key,
-					'anthropic-version' => '2023-06-01',
-					'Content-Type'      => 'application/json',
-				],
-				'body'    => wp_json_encode(
-					[
-						'model'      => apply_filters( 'splecheh_interpunction_claude_model', 'claude-3-5-haiku-latest' ),
-						'max_tokens' => 4096,
-						'system'     => $prompt . ' ' . self::response_format_instructions(),
-						'messages'   => [
-							[
-								'role'    => 'user',
-								'content' => (string) wp_json_encode( $sentences ),
-							],
-						],
-					]
-				),
-				'timeout' => 60,
-			]
-		);
-
-		if ( is_wp_error( $response ) ) {
-			return $response;
-		}
-
-		$data = json_decode( (string) wp_remote_retrieve_body( $response ), true );
-		return self::parse_results( (string) ( $data['content'][0]['text'] ?? '' ) );
-	}
-
-	/**
-	 * Minimal Gemini generateContent call.
-	 *
-	 * @param string[] $sentences
-	 * @return array|WP_Error
-	 */
-	private static function check_gemini( array $sentences, string $prompt ) {
-		$access_key = self::get_access_key();
-		if ( $access_key === '' ) {
-			return new WP_Error( 'interpunction_no_access_key', __( 'No Gemini access key is configured for the Interpunction Check.', 'splecheh' ) );
-		}
-
-		$model    = apply_filters( 'splecheh_interpunction_gemini_model', 'gemini-1.5-flash' );
-		$endpoint = self::get_endpoint( "https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent" );
-
-		$response = wp_remote_post(
-			add_query_arg( 'key', $access_key, $endpoint ),
-			[
-				'headers' => [ 'Content-Type' => 'application/json' ],
-				'body'    => wp_json_encode(
-					[
-						'contents'          => [
-							[ 'parts' => [ [ 'text' => (string) wp_json_encode( $sentences ) ] ] ],
-						],
-						'systemInstruction' => [
-							'parts' => [ [ 'text' => $prompt . ' ' . self::response_format_instructions() ] ],
-						],
-					]
-				),
-				'timeout' => 60,
-			]
-		);
-
-		if ( is_wp_error( $response ) ) {
-			return $response;
-		}
-
-		$data = json_decode( (string) wp_remote_retrieve_body( $response ), true );
-		return self::parse_results( (string) ( $data['candidates'][0]['content']['parts'][0]['text'] ?? '' ) );
 	}
 
 	private static function response_format_instructions(): string {
@@ -567,29 +447,13 @@ class Splecheh_InterpunctionBackend {
 	 * @return array|null Decoded array, or null when there is no array to be had.
 	 */
 	public static function extract_json_array( string $text ): ?array {
-		$text = trim( $text );
-
-		// A fenced block anywhere in the reply: take what's inside it.
-		if ( preg_match( '/```(?:json)?\s*(.+?)\s*```/is', $text, $matches ) ) {
-			$text = trim( $matches[1] );
+		if ( ! class_exists( '\\Lauzis\\WpPackages\\Llm\\Json' ) && class_exists( 'WpPackages_Registry' ) ) {
+			WpPackages_Registry::boot();
 		}
 
-		$decoded = json_decode( $text, true );
-		if ( is_array( $decoded ) ) {
-			return $decoded;
-		}
-
-		// Otherwise take the outermost [ … ] and try that, which drops any prose the
-		// model wrapped around the array.
-		$start = strpos( $text, '[' );
-		$end   = strrpos( $text, ']' );
-		if ( $start === false || $end === false || $end < $start ) {
-			return null;
-		}
-
-		$decoded = json_decode( substr( $text, $start, $end - $start + 1 ), true );
-
-		return is_array( $decoded ) ? $decoded : null;
+		return class_exists( '\\Lauzis\\WpPackages\\Llm\\Json' )
+			? \Lauzis\WpPackages\Llm\Json::extract_array( $text )
+			: null;
 	}
 
 	/**

@@ -19,9 +19,19 @@ final class InterpunctionCommandlineTest extends TestCase {
 		remove_all_filters( 'splecheh_interpunction_command_timeout' );
 	}
 
+	/**
+	 * Runs a commandline check through the public entry point.
+	 *
+	 * The provider call moved to the shared lauzis/wp-plugin-packages component,
+	 * so there is no longer a private check_commandline() to reflect into. check()
+	 * takes the command override the same way, and still routes through the
+	 * commandline provider because that is the default when none is configured.
+	 *
+	 * $prompt is accepted for call-site compatibility; the prompt now comes from
+	 * the configured setting, which in this suite is the default.
+	 */
 	private function invoke_check_commandline( array $sentences, string $language, string $prompt, string $command ) {
-		$check_commandline = new ReflectionMethod( \Splecheh_InterpunctionBackend::class, 'check_commandline' );
-		return $check_commandline->invoke( null, $sentences, $language, $prompt, $command );
+		return \Splecheh_InterpunctionBackend::check( $sentences, $language, $command );
 	}
 
 	private function latest_log_contents(): string {
