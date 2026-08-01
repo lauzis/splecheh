@@ -32,13 +32,15 @@ class Splecheh_Logs {
 			return null;
 		}
 
+		// No 'enabled' passed: the component reads the logs_enabled field from
+		// its own schema, which this plugin registers in config/settings.json.
 		return WpPackages_Registry::logger(
 			self::SLUG,
 			[
-				'dir'     => SPLECHEH_LOG_PATH,
-				'enabled' => static function (): bool {
-					return ! function_exists( 'splecheh_logs_enabled' ) || splecheh_logs_enabled();
-				},
+				'dir' => SPLECHEH_LOG_PATH,
+				// Logging has always been on by default here, and logging happens
+				// before the settings schema is registered (bootstrap, cron).
+				'enabled_default' => true,
 			]
 		);
 	}

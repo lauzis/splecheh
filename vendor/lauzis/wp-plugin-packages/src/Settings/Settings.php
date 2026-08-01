@@ -32,6 +32,9 @@ class Settings {
 	/** @var array<string, string> Bare id => final option key, for get(). */
 	private $keys = array();
 
+	/** @var array<string, mixed> Bare id => schema default, for get(). */
+	private $defaults = array();
+
 	/** @var bool */
 	private $rendered = false;
 
@@ -51,7 +54,7 @@ class Settings {
 
 		$this->container = array_intersect_key(
 			$config,
-			array_flip( array( 'page_parent', 'page_file' ) )
+			array_flip( array( 'page_parent', 'page_file', 'page_menu_title' ) )
 		);
 	}
 
@@ -71,8 +74,14 @@ class Settings {
 
 		foreach ( $sections as $section ) {
 			foreach ( $section['fields'] as $field ) {
-				if ( '' !== $field['bare'] ) {
-					$this->keys[ $field['bare'] ] = $field['id'];
+				if ( '' === $field['bare'] ) {
+					continue;
+				}
+
+				$this->keys[ $field['bare'] ] = $field['id'];
+
+				if ( isset( $field['default_value'] ) ) {
+					$this->defaults[ $field['bare'] ] = $field['default_value'];
 				}
 			}
 		}
@@ -151,8 +160,12 @@ class Settings {
 	 * Reads a stored setting by its bare id, so callers never need to know the
 	 * prefix or whether a legacy key was mapped.
 	 *
+	 * Falls back to the schema's own default before the caller's, so a setting
+	 * the user has never saved still reads as the value the settings page shows.
+	 *
 	 * @param string $bare_id Id as written in the schema.
-	 * @param mixed  $default Returned when nothing is stored.
+	 * @param mixed  $default Returned when nothing is stored and the schema
+	 *                        declares no default.
 	 * @return mixed
 	 */
 	public function get( $bare_id, $default = null ) {
@@ -163,14 +176,44 @@ class Settings {
 		$key = $this->keys[ $bare_id ];
 
 		if ( function_exists( 'carbon_get_theme_option' ) ) {
-			$value = carbon_get_theme_option( $key );
-		} else {
-			// Carbon Fields stores theme options under an underscore-prefixed
-			// option; read it directly when Carbon Fields itself is absent.
-			$value = get_option( '_' . $key, null );
+			// Carbon Fields applies the field's own default, so whatever it
+			// returns is authoritative — including an empty string, which is how
+			// an unchecked checkbox is stored and must not be mistaken for unset.
+			return carbon_get_theme_option( $key );
 		}
 
-		return ( null === $value || '' === $value ) ? $default : $value;
+		// Without Carbon Fields, read the option it would have written. Only a
+		// genuinely absent option falls back; a stored empty value is a real
+		// answer the user chose.
+		$value = get_option( '_' . $key, null );
+
+		if ( null !== $value ) {
+			return $value;
+		}
+
+		if ( isset( $this->defaults[ $bare_id ] ) ) {
+			$fallback = $this->resolve( $this->defaults[ $bare_id ] );
+
+			if ( null !== $fallback ) {
+				return $fallback;
+			}
+		}
+
+		return $default;
+	}
+
+	/**
+	 * The schema's declared default for a field, resolved.
+	 *
+	 * Lets a caller apply its own emptiness rule — mawiblah historically treated
+	 * any falsy stored value as "use the default", which differs from this
+	 * class's absent-only rule.
+	 *
+	 * @param string $bare_id
+	 * @return mixed|null
+	 */
+	public function default_for( $bare_id ) {
+		return isset( $this->defaults[ $bare_id ] ) ? $this->resolve( $this->defaults[ $bare_id ] ) : null;
 	}
 
 	/**

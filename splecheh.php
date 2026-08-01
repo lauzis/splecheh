@@ -378,10 +378,13 @@ function splecheh_render_interpunction_test_field(): string {
  * Defaults to enabled when Carbon Fields isn't loaded yet.
  */
 function splecheh_logs_enabled(): bool {
-	if ( ! function_exists( 'carbon_get_theme_option' ) ) {
+	if ( ! class_exists( 'WpPackages_Registry' ) ) {
 		return true;
 	}
-	return (bool) carbon_get_theme_option( 'splecheh_logs_enabled' );
+
+	// The field is declared by the shared package's logs schema; asking the
+	// settings page keeps the bare id as the single source of truth.
+	return (bool) WpPackages_Registry::settings( 'splecheh' )->get( 'logs_enabled', true );
 }
 
 /**

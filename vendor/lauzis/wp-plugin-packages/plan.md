@@ -1,6 +1,7 @@
 # Plan — JSON settings schema
 
-Status: **design agreed, not started.** Living document; update as decisions land.
+Status: **phases 1–3 done** (package v1.2.0, splecheh converted). Phases 4–6
+remain. Living document; update as decisions land.
 
 ## Goal
 
@@ -140,6 +141,21 @@ Three of these need care:
 
 `html` fields carry markup in a translated string; they need the same
 `wp_kses_post` treatment on output that the notices component already uses.
+Where the markup is generated rather than literal, `"html": "@callback:name"`
+passes the *callable* to Carbon Fields so it renders at display time — splecheh's
+interpunction test field embeds a nonce and depends on this.
+
+Two more requirements emerged while converting splecheh for real:
+
+5. **`defaults` per fragment.** A component ships one default, but a plugin may
+   need a different one. splecheh's logging has always defaulted to on, so
+   adopting the shared field had to preserve that rather than quietly turning it
+   off for new installs. `register()` takes `defaults` for this.
+
+6. **`help_text_args`.** splecheh builds one help string with `sprintf()` from
+   the detected locale. Keeping the sentence a literal in the schema and passing
+   the value as an argument means the string stays translatable — a
+   `@callback:` on the whole help text would not be.
 
 ## Worked example — splecheh after conversion
 
@@ -413,12 +429,16 @@ Mitigations:
 
 ```mermaid
 flowchart LR
-    P1["1 · Schema loader<br/>+ JSON→CF adapter<br/>in the package"]
-    P2["2 · splecheh converts<br/>its own settings to JSON<br/><i>no data migration</i>"]
-    P3["3 · Logs ships settings/logs.json<br/>splecheh + rest-in-sync consume it"]
+    P1["✅ 1 · Schema loader<br/>+ JSON→CF adapter<br/>package v1.1.0"]
+    P2["✅ 2 · splecheh converts<br/>its own settings to JSON<br/><i>no data migration</i>"]
+    P3["🔶 3 · Logs ships settings/logs.json<br/>splecheh consumes it<br/><i>rest-in-sync still to do</i>"]
     P4["4 · rest-in-sync converts<br/><i>hard case: 12 conditionals,<br/>2 callbacks</i>"]
     P5["5 · mawiblah → Carbon Fields<br/><i>+ 12-key data migration</i>"]
     P6["6 · Facades drop 'enabled';<br/>components read their own settings"]
+
+    style P1 fill:#d4edda,stroke:#28a745
+    style P2 fill:#d4edda,stroke:#28a745
+    style P3 fill:#fff3cd,stroke:#ffc107
     P1 --> P2 --> P3 --> P4 --> P5 --> P6
 ```
 
@@ -440,3 +460,44 @@ format's stress test.
   component is plausible.
 - Do gawg and yolsa adopt the logging component at the same time, or is that a
   separate decision once the settings work lands?
+
+
+---
+
+# Candidate — shared LLM integration
+
+Investigated, not started. Recorded so the findings are not lost.
+
+Three consumers, in very different states:
+
+| plugin | today |
+| --- | --- |
+| **splecheh** | Working multi-provider backend: `InterpunctionBackend` (623 lines) dispatches to openai / claude / gemini / commandline, plus `tools/llm-wrapper.php` (413 lines) for local models via ollama. Handles chunking, timeouts, JSON-array response parsing and error description. |
+| **yolsa** | Separate, OpenAI-only, and reportedly not working: `ChatGptApi` (261 lines) uses the Assistants API — assistant/thread/message endpoints — with its own curl and its own settings keys. Shares no code with splecheh. |
+| **poly-9000** | Empty scaffold. "LLM translation plugin for WordPress" — one commit, LICENSE and README only. |
+
+poly-9000 being empty is the argument for doing this sooner rather than later:
+it can be built on the component instead of growing a third implementation to
+reconcile afterwards.
+
+**What looks genuinely shared** — provider selection and credentials, endpoint
+overrides, model choice, timeouts, chunking, the request/retry mechanics, JSON
+response extraction and the error taxonomy. splecheh already has all of it in a
+provider-agnostic shape.
+
+**What stays per-plugin** — the prompt, the response schema each plugin expects,
+and what it does with the result. splecheh wants
+`{original, fixed, explanation}` per sentence; poly-9000 will want translations;
+yolsa wants a meta description.
+
+**Settings overlap directly with the work above**: provider, access key,
+endpoint, model and timeout are exactly the fields splecheh now declares in
+`config/settings.json`. An `llm` component would ship its own `settings/llm.json`
+the same way `logs.json` does, which is the pattern this plan already
+establishes.
+
+**Open question** — yolsa uses the OpenAI Assistants API (stateful assistants and
+threads) while splecheh uses plain chat completions. Those are different enough
+that the component would need to either pick one or model both. Worth
+establishing why yolsa is broken first: if the Assistants approach is the reason,
+converging on completions may fix it as a side effect.
