@@ -3,7 +3,7 @@
         'name' => 'lauzis/splecheh',
         'pretty_version' => 'dev-develop',
         'version' => 'dev-develop',
-        'reference' => 'd0020e0497fad63ff520115811a7c98a9113b6e6',
+        'reference' => '1629f22a77a827ee3d6c208027aeb2d294bc71ae',
         'type' => 'wordpress-plugin',
         'install_path' => __DIR__ . '/../../',
         'aliases' => array(),
@@ -22,7 +22,7 @@
         'lauzis/splecheh' => array(
             'pretty_version' => 'dev-develop',
             'version' => 'dev-develop',
-            'reference' => 'd0020e0497fad63ff520115811a7c98a9113b6e6',
+            'reference' => '1629f22a77a827ee3d6c208027aeb2d294bc71ae',
             'type' => 'wordpress-plugin',
             'install_path' => __DIR__ . '/../../',
             'aliases' => array(),
