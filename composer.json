@@ -1,0 +1,27 @@
+{
+    "name": "lauzis/splecheh",
+    "description": "WordPress spellcheck plugin",
+    "type": "wordpress-plugin",
+    "license": "MIT",
+    "repositories": [
+        {
+            "type": "vcs",
+            "url": "https://github.com/lauzis/wp-plugin-packages"
+        }
+    ],
+    "require": {
+        "php": ">=8.0",
+        "htmlburger/carbon-fields": "^3.6",
+        "tigitz/php-spellchecker": "^0.8.0",
+        "lauzis/wp-plugin-packages": "^1.0"
+    },
+    "config": {
+        "optimize-autoloader": true
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^13.2"
+    },
+    "scripts": {
+        "test": "phpunit"
+    }
+}

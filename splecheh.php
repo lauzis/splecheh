@@ -1,0 +1,1851 @@
+<?php
+/**
+ * Plugin Name: Splecheh - WordPress spellcheck plugin
+ * Plugin URI:  https://github.com/lauzis/splecheh
+ * Description: Run spell check on all articles and post types to find spelling errors.
+ * Version:     0.29.0
+ * Author:      Aivars Lauzis
+ * Text Domain: splecheh
+ * License:     MIT
+ * Requires PHP: 8.0
+ */
+
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
+define( 'SPLECHEH_VERSION', '0.29.0' );
+define( 'SPLECHEH_DIR', plugin_dir_path( __FILE__ ) );
+define( 'SPLECHEH_PLUGIN_FILE', __FILE__ );
+
+if ( ! defined( 'SPLECHEH_LOG_PATH' ) ) {
+	// Logs live under uploads/, not inside the plugin directory: WordPress
+	// deletes and re-extracts the plugin folder on every update, which used to
+	// destroy the log history.
+	$splecheh_uploads = wp_upload_dir();
+	define( 'SPLECHEH_LOG_PATH', untrailingslashit( str_replace( '\\', '/', $splecheh_uploads['basedir'] ) . '/splecheh-logs' ) );
+	unset( $splecheh_uploads );
+}
+
+// Composer dependencies (lauzis/wp-plugin-packages, Carbon Fields, the spellchecker).
+// Loaded up front so logging is available during bootstrap; Carbon Fields is
+// still booted later, on after_setup_theme.
+if ( file_exists( SPLECHEH_DIR . 'vendor/autoload.php' ) ) {
+	require_once SPLECHEH_DIR . 'vendor/autoload.php';
+	// Required explicitly: Composer's files autoload runs only one copy of this
+	// package per request, so the version gate would never see the others.
+	require_once SPLECHEH_DIR . 'vendor/lauzis/wp-plugin-packages/bootstrap.php';
+}
+
+require_once SPLECHEH_DIR . 'classes/Logs.php';
+require_once SPLECHEH_DIR . 'classes/Notification.php';
+require_once SPLECHEH_DIR . 'classes/NotificationManager.php';
+require_once SPLECHEH_DIR . 'classes/IgnoreList.php';
+require_once SPLECHEH_DIR . 'classes/AutoApplyList.php';
+require_once SPLECHEH_DIR . 'classes/TermIgnoreList.php';
+require_once SPLECHEH_DIR . 'classes/ContentSplitter.php';
+require_once SPLECHEH_DIR . 'classes/SpellCheckReport.php';
+require_once SPLECHEH_DIR . 'classes/SplechehCron.php';
+require_once SPLECHEH_DIR . 'classes/InterpunctionBackend.php';
+require_once SPLECHEH_DIR . 'classes/InterpunctionReport.php';
+require_once SPLECHEH_DIR . 'classes/InterpunctionCron.php';
+
+add_filter( 'cron_schedules', [ 'Splecheh_Cron', 'cron_schedules' ] );
+add_action( Splecheh_Cron::HOOK, [ 'Splecheh_Cron', 'run_batch' ] );
+add_action( Splecheh_InterpunctionCron::HOOK, [ 'Splecheh_InterpunctionCron', 'run_batch' ] );
+
+// Bootstrap Carbon Fields after all themes/plugins are loaded.
+add_action(
+	'after_setup_theme',
+	function (): void {
+		// Composer autoload runs at the top of this file; bail if vendor/ is absent.
+		if ( ! class_exists( '\\Carbon_Fields\\Carbon_Fields' ) ) {
+			return;
+		}
+		\Carbon_Fields\Carbon_Fields::boot();
+
+		if ( ! \Composer\InstalledVersions::isInstalled( 'tigitz/php-spellchecker' ) ) {
+			Splecheh_NotificationManager::register(
+				new Splecheh_Notification(
+					'missing-php-spellchecker',
+					sprintf(
+						/* translators: %s: composer require command */
+						__( '<strong>Splecheh:</strong> The spell-check library is missing. Run <code>%s</code> in your plugin directory to install it.', 'splecheh' ),
+						'composer require tigitz/php-spellchecker'
+					),
+					'error',
+					'one-time'
+				)
+			);
+		}
+	}
+);
+
+// Set defaults on first activation and clear cron on deactivation.
+register_activation_hook( __FILE__, 'splecheh_activate' );
+register_deactivation_hook( __FILE__, 'splecheh_deactivate' );
+
+function splecheh_activate(): void {
+	// Carbon Fields stores theme_options fields under _{field_name} in wp_options.
+	add_option( '_splecheh_post_types', [ 'post', 'page' ] );
+
+	if ( ! file_exists( SPLECHEH_LOG_PATH ) ) {
+		wp_mkdir_p( SPLECHEH_LOG_PATH );
+		file_put_contents( SPLECHEH_LOG_PATH . '/index.php', '<?php // silence is golden' );
+	}
+	Splecheh_Logs::addLog( 'plugin', 'Plugin activated', [ 'version' => SPLECHEH_VERSION ] );
+	Splecheh_Cron::sync();
+	Splecheh_InterpunctionCron::sync();
+}
+
+function splecheh_deactivate(): void {
+	Splecheh_Cron::deactivate();
+	Splecheh_InterpunctionCron::deactivate();
+}
+
+// Registers admin_notices, admin_enqueue_scripts and the dismissal handler.
+Splecheh_NotificationManager::init();
+add_action( 'admin_enqueue_scripts', 'splecheh_enqueue_spellcheck_assets' );
+add_action( 'admin_enqueue_scripts', 'splecheh_enqueue_details_assets' );
+add_action( 'admin_enqueue_scripts', 'splecheh_enqueue_interpunction_assets' );
+add_action( 'admin_enqueue_scripts', 'splecheh_enqueue_interpunction_details_assets' );
+add_action( 'admin_enqueue_scripts', 'splecheh_enqueue_settings_assets' );
+add_action( 'admin_enqueue_scripts', 'splecheh_enqueue_split_test_assets' );
+add_action( 'wp_ajax_splecheh_run', 'splecheh_ajax_run_spellcheck' );
+add_action( 'wp_ajax_splecheh_bulk_run', 'splecheh_ajax_bulk_run' );
+add_action( 'wp_ajax_splecheh_run_now', 'splecheh_ajax_run_now' );
+add_action( 'wp_ajax_splecheh_interpunction_run_now', 'splecheh_ajax_interpunction_run_now' );
+add_action( 'wp_ajax_splecheh_details_rerun', 'splecheh_ajax_details_rerun' );
+add_action( 'wp_ajax_splecheh_fix_word', 'splecheh_ajax_fix_word' );
+add_action( 'wp_ajax_splecheh_fix_everywhere', 'splecheh_ajax_fix_everywhere' );
+add_action( 'wp_ajax_splecheh_ignore_in_post', 'splecheh_ajax_ignore_in_post' );
+add_action( 'wp_ajax_splecheh_ignore_always', 'splecheh_ajax_ignore_always' );
+add_action( 'wp_ajax_splecheh_mark_complete', 'splecheh_ajax_mark_complete' );
+add_action( 'wp_ajax_splecheh_interpunction_run', 'splecheh_ajax_interpunction_run' );
+add_action( 'wp_ajax_splecheh_interpunction_bulk_run', 'splecheh_ajax_interpunction_bulk_run' );
+add_action( 'wp_ajax_splecheh_interpunction_details_rerun', 'splecheh_ajax_interpunction_details_rerun' );
+add_action( 'wp_ajax_splecheh_interpunction_fix', 'splecheh_ajax_interpunction_fix' );
+add_action( 'wp_ajax_splecheh_interpunction_ignore_in_post', 'splecheh_ajax_interpunction_ignore_in_post' );
+add_action( 'wp_ajax_splecheh_interpunction_mark_complete', 'splecheh_ajax_interpunction_mark_complete' );
+add_action( 'wp_ajax_splecheh_interpunction_test', 'splecheh_ajax_interpunction_test' );
+add_action( 'wp_ajax_splecheh_interpunction_test_search_posts', 'splecheh_ajax_interpunction_test_search_posts' );
+add_action( 'wp_ajax_splecheh_split_test', 'splecheh_ajax_split_test' );
+add_action( 'wp_ajax_splecheh_split_test_search_posts', 'splecheh_ajax_split_test_search_posts' );
+add_action( 'carbon_fields_theme_options_container_saved', 'splecheh_sync_bg_cron' );
+
+function splecheh_sync_bg_cron(): void {
+	Splecheh_Cron::sync();
+	Splecheh_InterpunctionCron::sync();
+}
+
+add_action( 'admin_menu', 'splecheh_register_menu' );
+
+function splecheh_register_menu(): void {
+	add_menu_page(
+		__( 'Splecheh', 'splecheh' ),
+		__( 'Splecheh', 'splecheh' ),
+		'edit_posts',
+		'splecheh',
+		'splecheh_page_spell_check',
+		'dashicons-editor-spellcheck',
+		80
+	);
+
+	add_submenu_page(
+		'splecheh',
+		__( 'Spell Check', 'splecheh' ),
+		__( 'Spell Check', 'splecheh' ),
+		'edit_posts',
+		'splecheh',
+		'splecheh_page_spell_check'
+	);
+
+	if ( splecheh_interpunction_enabled() ) {
+		add_submenu_page(
+			'splecheh',
+			__( 'Interpunction Check', 'splecheh' ),
+			__( 'Interpunction Check', 'splecheh' ),
+			'edit_posts',
+			'splecheh-interpunction',
+			'splecheh_page_interpunction_check'
+		);
+	}
+
+	add_submenu_page(
+		'splecheh',
+		__( 'Help', 'splecheh' ),
+		__( 'Help', 'splecheh' ),
+		'edit_posts',
+		'splecheh-help',
+		'splecheh_page_help'
+	);
+
+	add_submenu_page(
+		'splecheh',
+		__( 'Ignore List', 'splecheh' ),
+		__( 'Ignore List', 'splecheh' ),
+		'edit_posts',
+		'splecheh-ignore-list',
+		'splecheh_page_ignore_list'
+	);
+
+	add_submenu_page(
+		'splecheh',
+		__( 'Auto-Apply List', 'splecheh' ),
+		__( 'Auto-Apply List', 'splecheh' ),
+		'edit_posts',
+		'splecheh-auto-apply-list',
+		'splecheh_page_auto_apply_list'
+	);
+
+	add_submenu_page(
+		'splecheh',
+		__( 'Term Ignore List', 'splecheh' ),
+		__( 'Term Ignore List', 'splecheh' ),
+		'edit_posts',
+		'splecheh-term-ignore-list',
+		'splecheh_page_term_ignore_list'
+	);
+
+	add_submenu_page(
+		'splecheh',
+		__( 'Split Test', 'splecheh' ),
+		__( 'Split Test', 'splecheh' ),
+		'edit_posts',
+		'splecheh-split-test',
+		'splecheh_page_split_test'
+	);
+
+	if ( splecheh_logs_enabled() ) {
+		add_submenu_page(
+			'splecheh',
+			__( 'Logs', 'splecheh' ),
+			__( 'Logs', 'splecheh' ),
+			'edit_posts',
+			'splecheh-logs',
+			'splecheh_page_logs'
+		);
+	}
+
+	// Hidden page (not shown in the menu): per-post spell check details, opened in a new tab from the Spell Check table.
+	add_submenu_page(
+		null,
+		__( 'Spell Check Details', 'splecheh' ),
+		__( 'Spell Check Details', 'splecheh' ),
+		'edit_posts',
+		'splecheh-details',
+		'splecheh_page_details'
+	);
+
+	// Hidden page (not shown in the menu): per-post interpunction check details, opened in a new tab from the Interpunction Check table.
+	add_submenu_page(
+		null,
+		__( 'Interpunction Check Details', 'splecheh' ),
+		__( 'Interpunction Check Details', 'splecheh' ),
+		'edit_posts',
+		'splecheh-interpunction-details',
+		'splecheh_page_interpunction_details'
+	);
+}
+
+// Register the Settings page via Carbon Fields — replaces the manual submenu stub.
+add_action( 'carbon_fields_register_fields', 'splecheh_register_settings_fields' );
+
+function splecheh_register_settings_fields(): void {
+	if ( ! class_exists( 'WpPackages_Registry' ) ) {
+		return;
+	}
+
+	$settings = WpPackages_Registry::settings(
+		'splecheh',
+		[
+			'title'       => __( 'Settings', 'splecheh' ),
+			'page_parent' => 'splecheh',
+		]
+	);
+
+	// Values that cannot be JSON literals, resolved at render time.
+	$settings->callback(
+		'splecheh_post_type_options',
+		static function (): array {
+			$options = [];
+			foreach ( get_post_types( [ 'public' => true ], 'objects' ) as $type ) {
+				$options[ $type->name ] = $type->label;
+			}
+			return $options;
+		}
+	);
+
+	// First part of the WordPress locale, e.g. "en" from "en_US".
+	$settings->callback(
+		'splecheh_default_language',
+		static fn(): string => explode( '_', get_locale() )[0]
+	);
+
+	$settings->callback(
+		'splecheh_default_llm_command',
+		static fn(): string => 'php ' . SPLECHEH_DIR . 'tools/llm-wrapper.php'
+	);
+
+	// Rendered lazily by Carbon Fields, so the nonce inside stays current.
+	$settings->callback(
+		'splecheh_interpunction_test_field',
+		static fn() => splecheh_render_interpunction_test_field()
+	);
+
+	$settings->register(
+		SPLECHEH_DIR . 'config/settings.json',
+		[
+			'prefix' => 'splecheh_',
+			'domain' => 'splecheh',
+		]
+	);
+
+	// Logging settings come from the shared package, so every plugin presents
+	// the same control. The prefix lands it on splecheh_logs_enabled, the key
+	// this plugin already uses, so no migration is needed.
+	$settings->register(
+		WpPackages_Registry::schema( 'logs' ),
+		[
+			'prefix'   => 'splecheh_',
+			'domain'   => 'wp-plugin-packages',
+			'defaults' => [ 'logs_enabled' => true ],
+		]
+	);
+
+	$settings->render();
+}
+
+/**
+ * Renders the "Test Interpunction Check" button and expandable request/result
+ * sections on the Settings page.
+ */
+function splecheh_render_interpunction_test_field(): string {
+	ob_start();
+	?>
+	<p>
+		<label for="splecheh-interpunction-test-post"><?php esc_html_e( 'Test against a post/page (optional)', 'splecheh' ); ?></label><br>
+		<input
+			type="text"
+			id="splecheh-interpunction-test-post"
+			class="regular-text"
+			autocomplete="off"
+			placeholder="<?php esc_attr_e( 'Search by title… leave empty to use the built-in example sentences', 'splecheh' ); ?>"
+		>
+		<input type="hidden" id="splecheh-interpunction-test-post-id" value="">
+	</p>
+
+	<p>
+		<label>
+			<input type="checkbox" id="splecheh-interpunction-test-all-sentences">
+			<?php esc_html_e( 'Test all sentences (default: first 5) — this run only, not saved', 'splecheh' ); ?>
+		</label>
+	</p>
+
+	<?php if ( Splecheh_InterpunctionBackend::get_type() === 'commandline' ) : ?>
+	<p>
+		<label for="splecheh-interpunction-test-command-override"><?php esc_html_e( 'Command override (this test run only, not saved)', 'splecheh' ); ?></label><br>
+		<input
+			type="text"
+			id="splecheh-interpunction-test-command-override"
+			class="regular-text"
+			autocomplete="off"
+			placeholder="<?php echo esc_attr( Splecheh_InterpunctionBackend::get_command() !== '' ? Splecheh_InterpunctionBackend::get_command() : __( 'leave empty to use the saved Commandline Command', 'splecheh' ) ); ?>"
+		>
+		<p class="description"><?php esc_html_e( 'Try a different provider/model for this test only, e.g. "php tools/llm-wrapper.php --provider ollama --model qwen2.5:7b" instead of the saved command. Leave empty to test the saved Commandline Command as-is.', 'splecheh' ); ?></p>
+	</p>
+	<?php endif; ?>
+
+	<button type="button" id="splecheh-interpunction-test-button" class="button">
+		<?php esc_html_e( 'Test Interpunction Check', 'splecheh' ); ?>
+	</button>
+	<span class="spinner" style="float: none; display: none; vertical-align: middle;"></span>
+
+	<div id="splecheh-interpunction-test-message" class="notice" style="display: none; margin-top: 10px;"><p></p></div>
+
+	<details style="margin-top: 10px;">
+		<summary><?php esc_html_e( 'Example request', 'splecheh' ); ?></summary>
+		<pre id="splecheh-interpunction-test-request" style="white-space: pre-wrap;"></pre>
+	</details>
+
+	<details style="margin-top: 10px;">
+		<summary><?php esc_html_e( 'Result', 'splecheh' ); ?></summary>
+		<pre id="splecheh-interpunction-test-result" style="white-space: pre-wrap;"></pre>
+	</details>
+	<?php
+	return (string) ob_get_clean();
+}
+
+/**
+ * Whether logging is enabled.
+ * Defaults to enabled when Carbon Fields isn't loaded yet.
+ */
+function splecheh_logs_enabled(): bool {
+	if ( ! class_exists( 'WpPackages_Registry' ) ) {
+		return true;
+	}
+
+	// The field is declared by the shared package's logs schema; asking the
+	// settings page keeps the bare id as the single source of truth.
+	return (bool) WpPackages_Registry::settings( 'splecheh' )->get( 'logs_enabled', true );
+}
+
+/**
+ * Whether shortcode literals should be excluded from spell checking.
+ * Defaults to enabled when Carbon Fields isn't loaded yet.
+ */
+function splecheh_ignore_shortcodes_enabled(): bool {
+	if ( ! function_exists( 'carbon_get_theme_option' ) ) {
+		return true;
+	}
+	return (bool) carbon_get_theme_option( 'splecheh_ignore_shortcodes' );
+}
+
+/**
+ * Whether a report should also be considered outdated when its stored plugin
+ * version differs from the current one. Defaults to disabled when Carbon
+ * Fields isn't loaded yet.
+ */
+function splecheh_invalidate_on_version_change_enabled(): bool {
+	if ( ! function_exists( 'carbon_get_theme_option' ) ) {
+		return false;
+	}
+	return (bool) carbon_get_theme_option( 'splecheh_invalidate_on_version_change' );
+}
+
+/**
+ * How spell check runs treat double spaces: report them as issues (default), fix them
+ * automatically, or skip the check — see Splecheh_SpellCheckReport::WHITESPACE_* and the
+ * "Double Spaces" setting. An unrecognised stored value falls back to reporting, so a
+ * bad option value never silently rewrites content.
+ */
+function splecheh_whitespace_check_mode(): string {
+	if ( ! function_exists( 'carbon_get_theme_option' ) ) {
+		return Splecheh_SpellCheckReport::WHITESPACE_REPORT;
+	}
+
+	$mode = (string) carbon_get_theme_option( 'splecheh_whitespace_check' );
+
+	return in_array( $mode, [ Splecheh_SpellCheckReport::WHITESPACE_FIX, Splecheh_SpellCheckReport::WHITESPACE_OFF ], true )
+		? $mode
+		: Splecheh_SpellCheckReport::WHITESPACE_REPORT;
+}
+
+/**
+ * Whether the Interpunction Check feature (and its menu page) is enabled.
+ * Defaults to disabled when Carbon Fields isn't loaded yet.
+ */
+function splecheh_interpunction_enabled(): bool {
+	if ( ! function_exists( 'carbon_get_theme_option' ) ) {
+		return false;
+	}
+	return (bool) carbon_get_theme_option( 'splecheh_interpunction_enabled' );
+}
+
+/**
+ * Whether Interpunction Check should be skipped for a post until its Spell
+ * Check is clean (up to date, zero unresolved issues). Defaults to enabled
+ * when Carbon Fields isn't loaded yet, matching the field's own default.
+ */
+function splecheh_interpunction_require_spellcheck_clean_enabled(): bool {
+	if ( ! function_exists( 'carbon_get_theme_option' ) ) {
+		return true;
+	}
+	return (bool) carbon_get_theme_option( 'splecheh_interpunction_require_spellcheck_clean' );
+}
+
+/**
+ * Returns the post types currently enabled for spellchecking.
+ * Falls back to post and page when Carbon Fields is not yet loaded.
+ *
+ * @return string[]
+ */
+function splecheh_get_enabled_post_types(): array {
+	if ( ! function_exists( 'carbon_get_theme_option' ) ) {
+		return [ 'post', 'page' ];
+	}
+	$types = carbon_get_theme_option( 'splecheh_post_types' );
+	return ! empty( $types ) ? (array) $types : [ 'post', 'page' ];
+}
+
+function splecheh_page_spell_check(): void {
+	require_once SPLECHEH_DIR . 'templates/spell-check.php';
+}
+
+function splecheh_page_help(): void {
+	require_once SPLECHEH_DIR . 'templates/help.php';
+}
+
+function splecheh_page_logs(): void {
+	require_once SPLECHEH_DIR . 'templates/logs.php';
+}
+
+function splecheh_page_details(): void {
+	require_once SPLECHEH_DIR . 'templates/details.php';
+}
+
+function splecheh_page_ignore_list(): void {
+	require_once SPLECHEH_DIR . 'templates/ignore-list.php';
+}
+
+function splecheh_page_auto_apply_list(): void {
+	require_once SPLECHEH_DIR . 'templates/auto-apply-list.php';
+}
+
+function splecheh_page_term_ignore_list(): void {
+	require_once SPLECHEH_DIR . 'templates/term-ignore-list.php';
+}
+
+function splecheh_page_split_test(): void {
+	require_once SPLECHEH_DIR . 'templates/split-test.php';
+}
+
+function splecheh_page_interpunction_check(): void {
+	require_once SPLECHEH_DIR . 'templates/interpunction-check.php';
+}
+
+function splecheh_page_interpunction_details(): void {
+	require_once SPLECHEH_DIR . 'templates/interpunction-details.php';
+}
+
+add_action( 'wp_dashboard_setup', 'splecheh_register_dashboard_widget' );
+
+function splecheh_register_dashboard_widget(): void {
+	if ( ! current_user_can( 'edit_posts' ) ) {
+		return;
+	}
+
+	// Same widget id either way, so a user's dashboard layout survives toggling the
+	// Interpunction Check setting — only the title follows what's actually inside.
+	wp_add_dashboard_widget(
+		'splecheh_dashboard_widget',
+		splecheh_interpunction_enabled()
+			? __( 'Splecheh Checks', 'splecheh' )
+			: __( 'Splecheh Spell Check', 'splecheh' ),
+		'splecheh_render_dashboard_widget'
+	);
+}
+
+function splecheh_render_dashboard_widget(): void {
+	require_once SPLECHEH_DIR . 'templates/dashboard-widget.php';
+}
+
+/**
+ * Returns the language code for a post: Polylang, then WPML, then the plugin's Settings language
+ * (falling back to the WordPress site locale).
+ */
+function splecheh_get_language_code( int $post_id ): string {
+	if ( function_exists( 'pll_get_post_language' ) ) {
+		$lang = pll_get_post_language( $post_id );
+		if ( ! empty( $lang ) ) {
+			return (string) $lang;
+		}
+	}
+
+	if ( defined( 'ICL_SITEPRESS_VERSION' ) ) {
+		$lang_info = apply_filters( 'wpml_post_language_details', null, $post_id );
+		if ( is_array( $lang_info ) && ! empty( $lang_info['language_code'] ) ) {
+			return (string) $lang_info['language_code'];
+		}
+	}
+
+	return Splecheh_SpellCheckReport::get_language();
+}
+
+function splecheh_enqueue_spellcheck_assets( string $hook ): void {
+	if ( $hook !== 'toplevel_page_splecheh' ) {
+		return;
+	}
+	wp_enqueue_script(
+		'splecheh-spellcheck',
+		plugins_url( 'assets/js/spellcheck.js', SPLECHEH_PLUGIN_FILE ),
+		[],
+		SPLECHEH_VERSION,
+		true
+	);
+	wp_localize_script(
+		'splecheh-spellcheck',
+		'splechehCheck',
+		[
+			'ajaxUrl'      => admin_url( 'admin-ajax.php' ),
+			'nonce'        => wp_create_nonce( 'splecheh_run' ),
+			'runNowNonce'  => wp_create_nonce( 'splecheh_run_now' ),
+			'bulkRunNonce' => wp_create_nonce( 'splecheh_bulk_run' ),
+			'i18n'         => [
+				'upToDate'    => __( 'Up to date', 'splecheh' ),
+				'viewReport'  => __( 'View Report', 'splecheh' ),
+				'noErrors'    => __( 'No spelling errors found.', 'splecheh' ),
+				'errorsFound' => __( 'spelling error(s) found.', 'splecheh' ),
+				'running'     => __( 'Running…', 'splecheh' ),
+				'selectRows'  => __( 'Select at least one post.', 'splecheh' ),
+				'bulkChecked' => __( 'post(s) checked.', 'splecheh' ),
+				'bulkFailed'  => __( 'failed.', 'splecheh' ),
+			],
+		]
+	);
+}
+
+function splecheh_enqueue_details_assets(): void {
+	$page = isset( $_GET['page'] ) ? sanitize_key( wp_unslash( $_GET['page'] ) ) : '';
+	if ( $page !== 'splecheh-details' ) {
+		return;
+	}
+
+	$post_id  = isset( $_GET['post_id'] ) ? absint( $_GET['post_id'] ) : 0;
+	$language = $post_id ? splecheh_get_language_code( $post_id ) : '';
+
+	wp_enqueue_script(
+		'splecheh-details',
+		plugins_url( 'assets/js/details.js', SPLECHEH_PLUGIN_FILE ),
+		[],
+		SPLECHEH_VERSION,
+		true
+	);
+	wp_localize_script(
+		'splecheh-details',
+		'splechehDetails',
+		[
+			'ajaxUrl'  => admin_url( 'admin-ajax.php' ),
+			'nonce'    => wp_create_nonce( 'splecheh_details' ),
+			'postId'   => $post_id,
+			'language' => $language,
+			'i18n'     => [
+				'selectAction'   => __( 'Select a bulk action.', 'splecheh' ),
+				'selectRows'     => __( 'Select at least one issue.', 'splecheh' ),
+				'replacementReq' => __( 'Enter a replacement word before fixing.', 'splecheh' ),
+				'requestFailed'  => __( 'Request failed. Please try again.', 'splecheh' ),
+				'resolved'       => __( 'Resolved', 'splecheh' ),
+				'issuesFixed'    => __( 'issue(s) fixed.', 'splecheh' ),
+				'issuesUpdated'  => __( 'issue(s) updated.', 'splecheh' ),
+				'rerun'          => __( 'Re-run Spell Check', 'splecheh' ),
+				'rerunning'      => __( 'Running…', 'splecheh' ),
+				'noIssues'       => __( 'No spelling issues found.', 'splecheh' ),
+				'issuesFound'    => __( 'spelling issue(s) found.', 'splecheh' ),
+				'fix'            => __( 'Fix', 'splecheh' ),
+				'fixing'         => __( 'Fixing…', 'splecheh' ),
+				'working'        => __( 'Working…', 'splecheh' ),
+				'ignoreInPost'   => __( 'Ignore in post', 'splecheh' ),
+				'ignoreAlways'   => __( 'Ignore always', 'splecheh' ),
+				'fixEverywhere'  => $language !== ''
+					/* translators: %s: language code (e.g. "LV") */
+					? sprintf( __( 'Fix everywhere in %s', 'splecheh' ), strtoupper( $language ) )
+					: __( 'Fix everywhere', 'splecheh' ),
+				'markedComplete' => __( 'Marked as complete — all remaining issues resolved.', 'splecheh' ),
+				'fixNotApplied'  => __( 'fix(es) could NOT be written into the post and are left unresolved — the text no longer matches the post content. Re-run the Spell Check for this post and try again.', 'splecheh' ),
+			],
+		]
+	);
+}
+
+function splecheh_enqueue_interpunction_assets( string $hook ): void {
+	if ( $hook !== 'splecheh_page_splecheh-interpunction' ) {
+		return;
+	}
+	wp_enqueue_script(
+		'splecheh-interpunction',
+		plugins_url( 'assets/js/interpunction.js', SPLECHEH_PLUGIN_FILE ),
+		[],
+		SPLECHEH_VERSION,
+		true
+	);
+	wp_localize_script(
+		'splecheh-interpunction',
+		'splechehInterpunctionCheck',
+		[
+			'ajaxUrl'      => admin_url( 'admin-ajax.php' ),
+			'nonce'        => wp_create_nonce( 'splecheh_interpunction_run' ),
+			'bulkRunNonce' => wp_create_nonce( 'splecheh_interpunction_bulk_run' ),
+			'runNowNonce'  => wp_create_nonce( 'splecheh_interpunction_run_now' ),
+			'i18n'         => [
+				'upToDate'         => __( 'Up to date', 'splecheh' ),
+				'viewReport'       => __( 'View Report', 'splecheh' ),
+				'noIssues'         => __( 'No interpunction issues found.', 'splecheh' ),
+				'issuesFound'      => __( 'interpunction issue(s) found.', 'splecheh' ),
+				'selectRows'       => __( 'Select at least one post.', 'splecheh' ),
+				'bulkChecked'      => __( 'post(s) checked.', 'splecheh' ),
+				'bulkFailed'       => __( 'failed.', 'splecheh' ),
+				'incompleteChunks' => __( 'Check did not finish — re-run to process the remaining chunks.', 'splecheh' ),
+			],
+		]
+	);
+}
+
+function splecheh_enqueue_settings_assets(): void {
+	$page = isset( $_GET['page'] ) ? (string) wp_unslash( $_GET['page'] ) : '';
+	if ( $page !== 'crb_carbon_fields_container_settings.php' ) {
+		return;
+	}
+
+	wp_enqueue_style( 'wp-jquery-ui-dialog' );
+
+	wp_enqueue_style(
+		'splecheh-settings',
+		plugins_url( 'assets/css/settings.css', SPLECHEH_PLUGIN_FILE ),
+		[],
+		SPLECHEH_VERSION
+	);
+
+	wp_enqueue_script(
+		'splecheh-interpunction-test',
+		plugins_url( 'assets/js/interpunction-test.js', SPLECHEH_PLUGIN_FILE ),
+		[ 'jquery-ui-autocomplete' ],
+		SPLECHEH_VERSION,
+		true
+	);
+	wp_localize_script(
+		'splecheh-interpunction-test',
+		'splechehInterpunctionTest',
+		[
+			'ajaxUrl' => admin_url( 'admin-ajax.php' ),
+			'nonce'   => wp_create_nonce( 'splecheh_interpunction_test' ),
+			'i18n'    => [
+				'testing'       => __( 'Testing…', 'splecheh' ),
+				'requestFailed' => __( 'Test request failed. Please try again.', 'splecheh' ),
+			],
+		]
+	);
+}
+
+function splecheh_enqueue_split_test_assets(): void {
+	$page = isset( $_GET['page'] ) ? sanitize_key( wp_unslash( $_GET['page'] ) ) : '';
+	if ( $page !== 'splecheh-split-test' ) {
+		return;
+	}
+
+	wp_enqueue_script(
+		'splecheh-split-test',
+		plugins_url( 'assets/js/split-test.js', SPLECHEH_PLUGIN_FILE ),
+		[ 'jquery-ui-autocomplete' ],
+		SPLECHEH_VERSION,
+		true
+	);
+	wp_localize_script(
+		'splecheh-split-test',
+		'splechehSplitTest',
+		[
+			'ajaxUrl' => admin_url( 'admin-ajax.php' ),
+			'nonce'   => wp_create_nonce( 'splecheh_split_test' ),
+			'i18n'    => [
+				'running'       => __( 'Splitting…', 'splecheh' ),
+				'requestFailed' => __( 'Request failed. Please try again.', 'splecheh' ),
+				'chunksFound'   => __( 'block chunk(s) found — no text is merged across block boundaries.', 'splecheh' ),
+				'noChunks'      => __( 'No block chunks found in the content.', 'splecheh' ),
+				'looseText'     => __( '(loose text)', 'splecheh' ),
+				'sentences'     => __( 'Sentences', 'splecheh' ),
+				'plainText'     => __( 'Plain text', 'splecheh' ),
+				'innerHtml'     => __( 'Inner HTML (inline formatting preserved)', 'splecheh' ),
+			],
+		]
+	);
+}
+
+function splecheh_enqueue_interpunction_details_assets(): void {
+	$page = isset( $_GET['page'] ) ? sanitize_key( wp_unslash( $_GET['page'] ) ) : '';
+	if ( $page !== 'splecheh-interpunction-details' ) {
+		return;
+	}
+
+	wp_enqueue_script(
+		'splecheh-interpunction-details',
+		plugins_url( 'assets/js/interpunction-details.js', SPLECHEH_PLUGIN_FILE ),
+		[],
+		SPLECHEH_VERSION,
+		true
+	);
+	wp_localize_script(
+		'splecheh-interpunction-details',
+		'splechehInterpunctionDetails',
+		[
+			'ajaxUrl' => admin_url( 'admin-ajax.php' ),
+			'nonce'   => wp_create_nonce( 'splecheh_interpunction_details' ),
+			'postId'  => isset( $_GET['post_id'] ) ? absint( $_GET['post_id'] ) : 0,
+			'i18n'    => [
+				'selectAction'  => __( 'Select a bulk action.', 'splecheh' ),
+				'selectRows'    => __( 'Select at least one issue.', 'splecheh' ),
+				'fixedTextReq'  => __( 'Enter the fixed text before applying.', 'splecheh' ),
+				'requestFailed' => __( 'Request failed. Please try again.', 'splecheh' ),
+				'resolved'      => __( 'Resolved', 'splecheh' ),
+				'issuesFixed'   => __( 'issue(s) fixed.', 'splecheh' ),
+				'issuesUpdated' => __( 'issue(s) updated.', 'splecheh' ),
+				'rerun'         => __( 'Re-run Interpunction Check', 'splecheh' ),
+				'rerunning'     => __( 'Running…', 'splecheh' ),
+				'noIssues'      => __( 'No interpunction issues found.', 'splecheh' ),
+				'issuesFound'   => __( 'interpunction issue(s) found.', 'splecheh' ),
+				'fix'           => __( 'Fix', 'splecheh' ),
+				'fixing'        => __( 'Fixing…', 'splecheh' ),
+				'working'       => __( 'Working…', 'splecheh' ),
+				'ignoreInPost'  => __( 'Ignore in post', 'splecheh' ),
+				'markedComplete' => __( 'Marked as complete — all remaining issues resolved.', 'splecheh' ),
+				'fixNotApplied' => __( 'fix(es) could NOT be written into the post and are left unresolved — the sentence no longer matches the post content (edited since the check, or split up by inline formatting). Re-run the Interpunction Check for this post and try again, or edit the sentence by hand.', 'splecheh' ),
+				'spellcheckIssues' => __( 'spelling issue(s) found by the follow-up Spell Check — resolve them before running Interpunction Check again.', 'splecheh' ),
+				'spellcheckFailed' => __( 'The follow-up Spell Check could not be run:', 'splecheh' ),
+			],
+		]
+	);
+}
+
+/**
+ * Runs the spell check for a single post and logs the outcome. Shared by the
+ * per-row "Run Now"/"Re-run" action and the Details page's re-run button.
+ *
+ * @return array|WP_Error Report array on success, WP_Error on failure.
+ */
+function splecheh_run_spellcheck_for_post( int $post_id ) {
+	Splecheh_Logs::addLog( 'spellcheck', 'Spell check started for post ' . $post_id, [] );
+
+	$result = Splecheh_SpellCheckReport::run( $post_id );
+	if ( is_wp_error( $result ) ) {
+		Splecheh_Logs::addLog( 'spellcheck', 'Spell check failed for post ' . $post_id, [ 'error' => $result->get_error_message() ] );
+		return $result;
+	}
+
+	Splecheh_Logs::addLog( 'spellcheck', 'Spell check completed for post ' . $post_id, [ 'errors' => count( $result['errors'] ) ] );
+
+	return $result;
+}
+
+function splecheh_ajax_run_spellcheck(): void {
+	check_ajax_referer( 'splecheh_run', 'nonce' );
+
+	if ( ! current_user_can( 'edit_posts' ) ) {
+		wp_send_json_error( __( 'Insufficient permissions.', 'splecheh' ), 403 );
+	}
+
+	$post_id = isset( $_POST['post_id'] ) ? absint( $_POST['post_id'] ) : 0;
+	if ( ! $post_id ) {
+		wp_send_json_error( __( 'Invalid post ID.', 'splecheh' ), 400 );
+	}
+
+	$result = splecheh_run_spellcheck_for_post( $post_id );
+	if ( is_wp_error( $result ) ) {
+		wp_send_json_error(
+			[
+				'message'  => $result->get_error_message(),
+				'docs_url' => (string) ( $result->get_error_data( 'missing_wordlist' )['docs_url'] ?? '' ),
+			]
+		);
+	}
+
+	require_once SPLECHEH_DIR . 'classes/SpellCheckListTable.php';
+
+	wp_send_json_success(
+		[
+			'post_id'             => $post_id,
+			'error_count'         => count( $result['errors'] ),
+			'report_url'          => Splecheh_SpellCheckReport::get_report_url( $post_id ),
+			'actions_html'        => Splecheh_SpellCheckListTable::render_actions_html( $post_id ),
+			'checked_at_formatted' => get_date_from_gmt(
+				gmdate( 'Y-m-d H:i:s' ),
+				get_option( 'date_format' ) . ' ' . get_option( 'time_format' )
+			),
+		]
+	);
+}
+
+function splecheh_ajax_bulk_run(): void {
+	check_ajax_referer( 'splecheh_bulk_run', 'nonce' );
+
+	if ( ! current_user_can( 'edit_posts' ) ) {
+		wp_send_json_error( __( 'Insufficient permissions.', 'splecheh' ), 403 );
+	}
+
+	$post_ids = isset( $_POST['post_ids'] ) ? array_map( 'absint', (array) wp_unslash( $_POST['post_ids'] ) ) : [];
+	$post_ids = array_values( array_unique( array_filter( $post_ids ) ) );
+
+	if ( empty( $post_ids ) ) {
+		wp_send_json_error( __( 'No posts selected.', 'splecheh' ), 400 );
+	}
+
+	Splecheh_Logs::addLog( 'spellcheck', 'Bulk spell check started for ' . count( $post_ids ) . ' post(s)', [ 'post_ids' => $post_ids ] );
+
+	require_once SPLECHEH_DIR . 'classes/SpellCheckListTable.php';
+
+	$results       = [];
+	$success_count = 0;
+	$failure_count = 0;
+
+	foreach ( $post_ids as $post_id ) {
+		$result = splecheh_run_spellcheck_for_post( $post_id );
+
+		if ( is_wp_error( $result ) ) {
+			$failure_count++;
+			$results[ $post_id ] = [
+				'success'  => false,
+				'message'  => $result->get_error_message(),
+				'docs_url' => (string) ( $result->get_error_data( 'missing_wordlist' )['docs_url'] ?? '' ),
+			];
+			continue;
+		}
+
+		$success_count++;
+		$results[ $post_id ] = [
+			'success'              => true,
+			'error_count'          => count( $result['errors'] ),
+			'report_url'           => Splecheh_SpellCheckReport::get_report_url( $post_id ),
+			'actions_html'         => Splecheh_SpellCheckListTable::render_actions_html( $post_id ),
+			'checked_at_formatted' => get_date_from_gmt(
+				gmdate( 'Y-m-d H:i:s' ),
+				get_option( 'date_format' ) . ' ' . get_option( 'time_format' )
+			),
+		];
+	}
+
+	if ( $failure_count > 0 ) {
+		Splecheh_Logs::addLog(
+			'spellcheck',
+			"Bulk spell check completed with {$failure_count} failure(s) out of " . count( $post_ids ) . ' post(s)',
+			[
+				'success' => $success_count,
+				'failed'  => $failure_count,
+			]
+		);
+	} else {
+		Splecheh_Logs::addLog(
+			'spellcheck',
+			'Bulk spell check completed for ' . count( $post_ids ) . ' post(s)',
+			[ 'success' => $success_count ]
+		);
+	}
+
+	wp_send_json_success(
+		[
+			'results'       => $results,
+			'success_count' => $success_count,
+			'failure_count' => $failure_count,
+		]
+	);
+}
+
+function splecheh_ajax_details_rerun(): void {
+	check_ajax_referer( 'splecheh_details', 'nonce' );
+
+	$post_id = isset( $_POST['post_id'] ) ? absint( $_POST['post_id'] ) : 0;
+	if ( ! $post_id || ! current_user_can( 'edit_post', $post_id ) ) {
+		wp_send_json_error( __( 'Insufficient permissions.', 'splecheh' ), 403 );
+	}
+
+	$result = splecheh_run_spellcheck_for_post( $post_id );
+	if ( is_wp_error( $result ) ) {
+		wp_send_json_error(
+			[
+				'message'  => $result->get_error_message(),
+				'docs_url' => (string) ( $result->get_error_data( 'missing_wordlist' )['docs_url'] ?? '' ),
+			]
+		);
+	}
+
+	wp_send_json_success(
+		[
+			'errors' => Splecheh_SpellCheckReport::format_errors_for_details( $result['errors'] ),
+		]
+	);
+}
+
+function splecheh_ajax_run_now(): void {
+	check_ajax_referer( 'splecheh_run_now', 'nonce' );
+
+	if ( ! current_user_can( 'manage_options' ) ) {
+		wp_send_json_error( __( 'Insufficient permissions.', 'splecheh' ), 403 );
+	}
+
+	Splecheh_Cron::run_batch();
+
+	$summary = Splecheh_Cron::get_summary();
+
+	wp_send_json_success(
+		[
+			'last_run'      => $summary['last_run']
+				? get_date_from_gmt(
+					gmdate( 'Y-m-d H:i:s', strtotime( $summary['last_run'] ) ),
+					get_option( 'date_format' ) . ' ' . get_option( 'time_format' )
+				)
+				: '',
+			'issues_found'  => (int) $summary['issues_found'],
+			'posts_pending' => (int) $summary['posts_pending'],
+		]
+	);
+}
+
+function splecheh_ajax_interpunction_run_now(): void {
+	check_ajax_referer( 'splecheh_interpunction_run_now', 'nonce' );
+
+	if ( ! current_user_can( 'manage_options' ) ) {
+		wp_send_json_error( __( 'Insufficient permissions.', 'splecheh' ), 403 );
+	}
+
+	Splecheh_InterpunctionCron::run_batch();
+
+	$summary = Splecheh_InterpunctionCron::get_summary();
+
+	wp_send_json_success(
+		[
+			'last_run'      => $summary['last_run']
+				? get_date_from_gmt(
+					gmdate( 'Y-m-d H:i:s', strtotime( $summary['last_run'] ) ),
+					get_option( 'date_format' ) . ' ' . get_option( 'time_format' )
+				)
+				: '',
+			'issues_found'  => (int) $summary['issues_found'],
+			'posts_pending' => (int) $summary['posts_pending'],
+		]
+	);
+}
+
+/**
+ * Reads post_id/report from the request for the Details page AJAX actions.
+ *
+ * @return array{0: int, 1: array}|null Null and a JSON error response are sent on failure.
+ */
+function splecheh_get_details_request_context(): ?array {
+	$post_id = isset( $_POST['post_id'] ) ? absint( $_POST['post_id'] ) : 0;
+	if ( ! $post_id || ! current_user_can( 'edit_post', $post_id ) ) {
+		wp_send_json_error( __( 'Insufficient permissions.', 'splecheh' ), 403 );
+	}
+
+	$report = Splecheh_SpellCheckReport::get_report( $post_id );
+	if ( ! $report ) {
+		wp_send_json_error( __( 'Report not found.', 'splecheh' ), 404 );
+	}
+
+	return [ $post_id, $report ];
+}
+
+function splecheh_ajax_fix_word(): void {
+	check_ajax_referer( 'splecheh_details', 'nonce' );
+
+	[ $post_id, $report ] = splecheh_get_details_request_context();
+
+	$items = isset( $_POST['items'] ) ? json_decode( wp_unslash( $_POST['items'] ), true ) : null;
+	if ( ! is_array( $items ) || empty( $items ) ) {
+		wp_send_json_error( __( 'Invalid request.', 'splecheh' ), 400 );
+	}
+
+	$post = get_post( $post_id );
+	if ( ! $post ) {
+		wp_send_json_error( __( 'Post not found.', 'splecheh' ), 404 );
+	}
+
+	$content   = $post->post_content;
+	$applied   = [];
+	$unapplied = [];
+
+	foreach ( $items as $item ) {
+		$index       = isset( $item['index'] ) ? absint( $item['index'] ) : -1;
+		$replacement = isset( $item['replacement'] ) ? sanitize_text_field( wp_unslash( $item['replacement'] ) ) : '';
+
+		if ( $replacement === '' || ! isset( $report['errors'][ $index ] ) || ! empty( $report['errors'][ $index ]['resolved'] ) ) {
+			continue;
+		}
+
+		$error   = $report['errors'][ $index ];
+		$updated = Splecheh_SpellCheckReport::is_whitespace_error( $error )
+			? Splecheh_SpellCheckReport::replace_whitespace_run( $content, $error['word'], $replacement )
+			: Splecheh_SpellCheckReport::replace_occurrence( $content, $error['word'], $error['excerpt'], $replacement );
+
+		// Not in the content any more (post edited since the check) — leave the issue
+		// open and report it, rather than marking a fix that never reached the post.
+		if ( $updated === null ) {
+			$unapplied[] = $index;
+			Splecheh_Logs::addLog(
+				'spellcheck',
+				"Fix not applied in post {$post_id}: text no longer found in the content",
+				[ 'word' => $error['word'] ]
+			);
+			continue;
+		}
+
+		$content           = $updated;
+		$applied[ $index ] = $replacement;
+	}
+
+	if ( ! empty( $applied ) ) {
+		wp_update_post(
+			[
+				'ID'           => $post_id,
+				'post_content' => $content,
+			]
+		);
+
+		foreach ( Splecheh_SpellCheckReport::find_unapplied_fixes( $post_id, $applied ) as $index ) {
+			unset( $applied[ $index ] );
+			$unapplied[] = $index;
+			Splecheh_Logs::addLog(
+				'spellcheck',
+				"Fix did not survive saving post {$post_id}: text missing from the stored content",
+				[ 'index' => $index ]
+			);
+		}
+	}
+
+	foreach ( $applied as $index => $replacement ) {
+		$report['errors'][ $index ]['resolved'] = true;
+		$report['errors'][ $index ]['fixed_to'] = $replacement;
+	}
+
+	$fixed = count( $applied );
+
+	if ( $fixed > 0 ) {
+		Splecheh_SpellCheckReport::update_report( $post_id, $report );
+		Splecheh_Logs::addLog( 'spellcheck', "Fixed {$fixed} word(s) in post {$post_id}", [] );
+	}
+
+	wp_send_json_success(
+		[
+			'fixed'            => $fixed,
+			'unapplied'        => array_values( $unapplied ),
+			'unresolved_count' => Splecheh_SpellCheckReport::count_unresolved( $post_id ),
+		]
+	);
+}
+
+/**
+ * "Fix everywhere in {language}" — like the per-issue Fix, but also saves the
+ * word→replacement combo to the global, language-scoped auto-apply list so future
+ * spell checks on any post in that language correct the same word automatically.
+ * Also fixes every occurrence of the word in the current post right away.
+ */
+function splecheh_ajax_fix_everywhere(): void {
+	check_ajax_referer( 'splecheh_details', 'nonce' );
+
+	[ $post_id, $report ] = splecheh_get_details_request_context();
+
+	$items = isset( $_POST['items'] ) ? json_decode( wp_unslash( $_POST['items'] ), true ) : null;
+	if ( ! is_array( $items ) || empty( $items ) ) {
+		wp_send_json_error( __( 'Invalid request.', 'splecheh' ), 400 );
+	}
+
+	$post = get_post( $post_id );
+	if ( ! $post ) {
+		wp_send_json_error( __( 'Post not found.', 'splecheh' ), 404 );
+	}
+
+	$language = splecheh_get_language_code( $post_id );
+	$content  = $post->post_content;
+	$fixed    = 0;
+
+	foreach ( $items as $item ) {
+		$index       = isset( $item['index'] ) ? absint( $item['index'] ) : -1;
+		$replacement = isset( $item['replacement'] ) ? sanitize_text_field( wp_unslash( $item['replacement'] ) ) : '';
+
+		if ( $replacement === '' || ! isset( $report['errors'][ $index ] ) || ! empty( $report['errors'][ $index ]['resolved'] ) ) {
+			continue;
+		}
+
+		$error = $report['errors'][ $index ];
+
+		// A whitespace run is source noise in this one post — there is no word pair
+		// worth teaching the auto-apply list. The Details page hides the button for
+		// these rows; this guards the bulk action and any hand-made request.
+		if ( Splecheh_SpellCheckReport::is_whitespace_error( $error ) ) {
+			continue;
+		}
+
+		Splecheh_AutoApplyList::add_pair( $language, $error['word'], $replacement );
+		$content = Splecheh_SpellCheckReport::replace_all_occurrences( $content, $error['word'], $replacement );
+
+		$report['errors'][ $index ]['resolved'] = true;
+		$report['errors'][ $index ]['fixed_to'] = $replacement;
+		$fixed++;
+
+		Splecheh_Logs::addAutoApplyLog(
+			sprintf( 'Added to auto-apply list and fixed in post %d: "%s" → "%s"', $post_id, $error['word'], $replacement ),
+			[ 'language' => $language ]
+		);
+	}
+
+	if ( $fixed > 0 ) {
+		wp_update_post(
+			[
+				'ID'           => $post_id,
+				'post_content' => $content,
+			]
+		);
+		Splecheh_SpellCheckReport::update_report( $post_id, $report );
+		Splecheh_Logs::addLog( 'spellcheck', "Fixed {$fixed} word(s) everywhere in post {$post_id} (auto-apply list, {$language})", [] );
+	}
+
+	wp_send_json_success(
+		[
+			'fixed'            => $fixed,
+			'unresolved_count' => Splecheh_SpellCheckReport::count_unresolved( $post_id ),
+		]
+	);
+}
+
+function splecheh_ajax_ignore_in_post(): void {
+	check_ajax_referer( 'splecheh_details', 'nonce' );
+
+	[ $post_id, $report ] = splecheh_get_details_request_context();
+
+	$indices = isset( $_POST['indices'] ) ? json_decode( wp_unslash( $_POST['indices'] ), true ) : null;
+	if ( ! is_array( $indices ) || empty( $indices ) ) {
+		wp_send_json_error( __( 'Invalid request.', 'splecheh' ), 400 );
+	}
+
+	$ignored_words = (array) get_post_meta( $post_id, '_splecheh_ignored_words', true );
+	$count         = 0;
+
+	foreach ( $indices as $index ) {
+		$index = absint( $index );
+		if ( ! isset( $report['errors'][ $index ] ) || ! empty( $report['errors'][ $index ]['resolved'] ) ) {
+			continue;
+		}
+
+		$word = mb_strtolower( $report['errors'][ $index ]['word'] );
+		if ( ! in_array( $word, $ignored_words, true ) ) {
+			$ignored_words[] = $word;
+		}
+		$report['errors'][ $index ]['resolved'] = true;
+		$count++;
+	}
+
+	if ( $count > 0 ) {
+		update_post_meta( $post_id, '_splecheh_ignored_words', $ignored_words );
+		Splecheh_SpellCheckReport::update_report( $post_id, $report );
+	}
+
+	wp_send_json_success(
+		[
+			'ignored'          => $count,
+			'unresolved_count' => Splecheh_SpellCheckReport::count_unresolved( $post_id ),
+		]
+	);
+}
+
+function splecheh_ajax_ignore_always(): void {
+	check_ajax_referer( 'splecheh_details', 'nonce' );
+
+	[ $post_id, $report ] = splecheh_get_details_request_context();
+
+	$indices = isset( $_POST['indices'] ) ? json_decode( wp_unslash( $_POST['indices'] ), true ) : null;
+	if ( ! is_array( $indices ) || empty( $indices ) ) {
+		wp_send_json_error( __( 'Invalid request.', 'splecheh' ), 400 );
+	}
+
+	$language = splecheh_get_language_code( $post_id );
+	$count    = 0;
+
+	foreach ( $indices as $index ) {
+		$index = absint( $index );
+		if ( ! isset( $report['errors'][ $index ] ) || ! empty( $report['errors'][ $index ]['resolved'] ) ) {
+			continue;
+		}
+
+		// Same reasoning as "Fix everywhere": a whitespace run is not a word that
+		// could be ignored language-wide.
+		if ( Splecheh_SpellCheckReport::is_whitespace_error( $report['errors'][ $index ] ) ) {
+			continue;
+		}
+
+		Splecheh_IgnoreList::add_word( $language, $report['errors'][ $index ]['word'] );
+		$report['errors'][ $index ]['resolved'] = true;
+		$count++;
+	}
+
+	if ( $count > 0 ) {
+		Splecheh_SpellCheckReport::update_report( $post_id, $report );
+	}
+
+	wp_send_json_success(
+		[
+			'ignored'          => $count,
+			'unresolved_count' => Splecheh_SpellCheckReport::count_unresolved( $post_id ),
+		]
+	);
+}
+
+function splecheh_ajax_mark_complete(): void {
+	check_ajax_referer( 'splecheh_details', 'nonce' );
+
+	$post_id = isset( $_POST['post_id'] ) ? absint( $_POST['post_id'] ) : 0;
+	if ( ! $post_id || ! current_user_can( 'edit_post', $post_id ) ) {
+		wp_send_json_error( __( 'Insufficient permissions.', 'splecheh' ), 403 );
+	}
+
+	$report = Splecheh_SpellCheckReport::mark_complete( $post_id );
+	if ( is_wp_error( $report ) ) {
+		wp_send_json_error( [ 'message' => $report->get_error_message() ] );
+	}
+
+	Splecheh_Logs::addLog( 'spellcheck', "Marked spell check complete for post {$post_id}", [] );
+
+	wp_send_json_success(
+		[
+			'errors' => Splecheh_SpellCheckReport::format_errors_for_details( $report['errors'] ),
+		]
+	);
+}
+
+/**
+ * Runs the interpunction check for a single post and logs the outcome. Shared by the
+ * per-row "Run Now"/"Re-run" action and the Details page's re-run button.
+ *
+ * @return array|WP_Error Report array on success, WP_Error on failure.
+ */
+function splecheh_run_interpunction_check_for_post( int $post_id ) {
+	Splecheh_Logs::addLog( 'interpunction', 'Interpunction check started for post ' . $post_id, [] );
+
+	$result = Splecheh_InterpunctionReport::run( $post_id );
+	if ( is_wp_error( $result ) ) {
+		Splecheh_Logs::addLog( 'interpunction', 'Interpunction check failed for post ' . $post_id, [ 'error' => $result->get_error_message() ] );
+		return $result;
+	}
+
+	Splecheh_Logs::addLog( 'interpunction', 'Interpunction check completed for post ' . $post_id, [ 'issues' => count( $result['issues'] ) ] );
+
+	return $result;
+}
+
+function splecheh_ajax_interpunction_run(): void {
+	check_ajax_referer( 'splecheh_interpunction_run', 'nonce' );
+
+	if ( ! current_user_can( 'edit_posts' ) || ! splecheh_interpunction_enabled() ) {
+		wp_send_json_error( __( 'Insufficient permissions.', 'splecheh' ), 403 );
+	}
+
+	$post_id = isset( $_POST['post_id'] ) ? absint( $_POST['post_id'] ) : 0;
+	if ( ! $post_id ) {
+		wp_send_json_error( __( 'Invalid post ID.', 'splecheh' ), 400 );
+	}
+
+	$result = splecheh_run_interpunction_check_for_post( $post_id );
+
+	require_once SPLECHEH_DIR . 'classes/InterpunctionListTable.php';
+
+	// A chunk failing partway through still saves whatever chunks succeeded (see
+	// Splecheh_InterpunctionReport::run()), so even on failure there may be a fresher
+	// report to reflect in the row — re-read it rather than trusting $result's shape,
+	// since $result is a WP_Error (no report data) in that case.
+	$report = Splecheh_InterpunctionReport::get_report( $post_id );
+
+	if ( is_wp_error( $result ) ) {
+		wp_send_json_error(
+			[
+				'message' => $result->get_error_message(),
+				'row'     => $report ? splecheh_interpunction_row_payload( $post_id, $report ) : null,
+			]
+		);
+	}
+
+	wp_send_json_success( splecheh_interpunction_row_payload( $post_id, $result ) );
+}
+
+/**
+ * Builds the row-refresh payload shared by the success and partial-failure branches
+ * of splecheh_ajax_interpunction_run(), so both update the list table row the same way.
+ */
+function splecheh_interpunction_row_payload( int $post_id, array $report ): array {
+	return [
+		'post_id'              => $post_id,
+		'issue_count'          => count( $report['issues'] ),
+		'report_url'           => Splecheh_InterpunctionReport::get_report_url( $post_id ),
+		'actions_html'         => Splecheh_InterpunctionListTable::render_actions_html( $post_id ),
+		'checked_at_formatted' => get_date_from_gmt(
+			gmdate( 'Y-m-d H:i:s' ),
+			get_option( 'date_format' ) . ' ' . get_option( 'time_format' )
+		),
+		'chunks_processed'     => $report['chunks_processed'] ?? null,
+		'chunks_total'         => $report['chunks_total'] ?? null,
+	];
+}
+
+function splecheh_ajax_interpunction_bulk_run(): void {
+	check_ajax_referer( 'splecheh_interpunction_bulk_run', 'nonce' );
+
+	if ( ! current_user_can( 'edit_posts' ) || ! splecheh_interpunction_enabled() ) {
+		wp_send_json_error( __( 'Insufficient permissions.', 'splecheh' ), 403 );
+	}
+
+	$post_ids = isset( $_POST['post_ids'] ) ? array_map( 'absint', (array) wp_unslash( $_POST['post_ids'] ) ) : [];
+	$post_ids = array_values( array_unique( array_filter( $post_ids ) ) );
+
+	if ( empty( $post_ids ) ) {
+		wp_send_json_error( __( 'No posts selected.', 'splecheh' ), 400 );
+	}
+
+	Splecheh_Logs::addLog( 'interpunction', 'Bulk interpunction check started for ' . count( $post_ids ) . ' post(s)', [ 'post_ids' => $post_ids ] );
+
+	require_once SPLECHEH_DIR . 'classes/InterpunctionListTable.php';
+
+	$results       = [];
+	$success_count = 0;
+	$failure_count = 0;
+
+	foreach ( $post_ids as $post_id ) {
+		$result = splecheh_run_interpunction_check_for_post( $post_id );
+
+		if ( is_wp_error( $result ) ) {
+			$failure_count++;
+			// A chunk failing partway through can still leave a partial report saved
+			// (see InterpunctionReport::run()) — reflect that row state if so, same as
+			// the single-post AJAX handler.
+			$report              = Splecheh_InterpunctionReport::get_report( $post_id );
+			$results[ $post_id ] = array_merge(
+				[
+					'success' => false,
+					'message' => $result->get_error_message(),
+				],
+				$report ? splecheh_interpunction_row_payload( $post_id, $report ) : []
+			);
+			continue;
+		}
+
+		$success_count++;
+		$results[ $post_id ] = array_merge(
+			[ 'success' => true ],
+			splecheh_interpunction_row_payload( $post_id, $result )
+		);
+	}
+
+	if ( $failure_count > 0 ) {
+		Splecheh_Logs::addLog(
+			'interpunction',
+			"Bulk interpunction check completed with {$failure_count} failure(s) out of " . count( $post_ids ) . ' post(s)',
+			[
+				'success' => $success_count,
+				'failed'  => $failure_count,
+			]
+		);
+	} else {
+		Splecheh_Logs::addLog(
+			'interpunction',
+			'Bulk interpunction check completed for ' . count( $post_ids ) . ' post(s)',
+			[ 'success' => $success_count ]
+		);
+	}
+
+	wp_send_json_success(
+		[
+			'results'       => $results,
+			'success_count' => $success_count,
+			'failure_count' => $failure_count,
+		]
+	);
+}
+
+/**
+ * Runs the "Test Interpunction Check" button on the Settings page: builds a fixed
+ * example payload from the currently saved settings and canned sentences, sends it
+ * through the configured provider, and returns both the payload and the outcome.
+ */
+function splecheh_ajax_interpunction_test(): void {
+	check_ajax_referer( 'splecheh_interpunction_test', 'nonce' );
+
+	if ( ! current_user_can( 'manage_options' ) ) {
+		wp_send_json_error( [ 'message' => __( 'Insufficient permissions.', 'splecheh' ) ], 403 );
+	}
+
+	$post_id          = isset( $_POST['post_id'] ) ? absint( $_POST['post_id'] ) : 0;
+	$sentence_limit   = ! empty( $_POST['test_all_sentences'] ) ? 0 : null;
+	$payload          = Splecheh_InterpunctionBackend::build_test_payload( $post_id, $sentence_limit );
+	$command_override = isset( $_POST['command_override'] ) ? trim( sanitize_text_field( wp_unslash( $_POST['command_override'] ) ) ) : '';
+
+	Splecheh_Logs::addLog( 'interpunction', 'Interpunction test started', [] );
+
+	$started_at = microtime( true );
+
+	try {
+		$result = Splecheh_InterpunctionBackend::check( $payload['sentences'], $payload['language'], $command_override !== '' ? $command_override : null );
+	} catch ( \Throwable $exception ) {
+		Splecheh_Logs::addLog( 'interpunction', 'Interpunction test failed', [ 'error' => $exception->getMessage() ] );
+		wp_send_json_error(
+			[
+				'payload' => $payload,
+				'message' => $exception->getMessage(),
+			]
+		);
+	}
+
+	$duration_seconds = round( microtime( true ) - $started_at, 2 );
+
+	if ( is_wp_error( $result ) ) {
+		Splecheh_Logs::addLog( 'interpunction', 'Interpunction test failed', [ 'error' => $result->get_error_message() ] );
+		wp_send_json_error(
+			[
+				'payload'          => $payload,
+				'message'          => $result->get_error_message(),
+				'duration_seconds' => $duration_seconds,
+			]
+		);
+	}
+
+	Splecheh_Logs::addLog( 'interpunction', 'Interpunction test completed', [ 'duration_seconds' => $duration_seconds ] );
+
+	wp_send_json_success(
+		[
+			'payload'          => $payload,
+			'result'           => Splecheh_InterpunctionReport::build_issues( $result ),
+			'duration_seconds' => $duration_seconds,
+		]
+	);
+}
+
+/**
+ * Powers the autocomplete field on the "Test Interpunction Check" button: searches
+ * titles across the post types enabled for checking, for the user to pick a real
+ * post/page to test against instead of the canned example sentences.
+ */
+function splecheh_ajax_interpunction_test_search_posts(): void {
+	check_ajax_referer( 'splecheh_interpunction_test', 'nonce' );
+
+	if ( ! current_user_can( 'manage_options' ) ) {
+		wp_send_json_error( [ 'message' => __( 'Insufficient permissions.', 'splecheh' ) ], 403 );
+	}
+
+	$search = isset( $_GET['s'] ) ? sanitize_text_field( wp_unslash( $_GET['s'] ) ) : '';
+	if ( $search === '' ) {
+		wp_send_json_success( [] );
+	}
+
+	$query = new WP_Query(
+		[
+			's'                      => $search,
+			'post_type'              => splecheh_get_enabled_post_types(),
+			'post_status'            => 'publish',
+			'posts_per_page'         => 20,
+			'orderby'                => 'relevance',
+			'no_found_rows'          => true,
+			'update_post_meta_cache' => false,
+			'update_post_term_cache' => false,
+		]
+	);
+
+	$results = array_map(
+		static function ( WP_Post $post ): array {
+			return [
+				'id'    => $post->ID,
+				'label' => $post->post_title !== '' ? $post->post_title : '(no title)',
+			];
+		},
+		$query->posts
+	);
+
+	wp_send_json_success( $results );
+}
+
+/**
+ * Powers the "Split Test" page: given either a chosen post/page or a raw HTML
+ * snippet, walks the content tree and returns the block-level chunks (tag, plain
+ * text, inner HTML with inline formatting preserved, and the sentences each block
+ * splits into) — purely a preview, nothing is checked, fixed, or saved.
+ */
+function splecheh_ajax_split_test(): void {
+	check_ajax_referer( 'splecheh_split_test', 'nonce' );
+
+	if ( ! current_user_can( 'edit_posts' ) ) {
+		wp_send_json_error( [ 'message' => __( 'Insufficient permissions.', 'splecheh' ) ], 403 );
+	}
+
+	$post_id           = isset( $_POST['post_id'] ) ? absint( $_POST['post_id'] ) : 0;
+	$ignore_shortcodes = ! empty( $_POST['ignore_shortcodes'] );
+	$source            = 'html';
+	$post_title        = '';
+
+	if ( $post_id > 0 ) {
+		$post = get_post( $post_id );
+		if ( ! $post || ! current_user_can( 'edit_post', $post_id ) ) {
+			wp_send_json_error( [ 'message' => __( 'You cannot read that post.', 'splecheh' ) ], 403 );
+		}
+		$content    = $post->post_content;
+		$source     = 'post';
+		$post_title = $post->post_title;
+	} else {
+		// Raw HTML pasted into the textarea: keep it verbatim (no sanitizing that would
+		// strip the very tags we want to test the splitter against), just unslash it.
+		$content = isset( $_POST['content'] ) ? (string) wp_unslash( $_POST['content'] ) : '';
+	}
+
+	$raw_content = $content;
+	if ( $ignore_shortcodes ) {
+		$content = Splecheh_SpellCheckReport::strip_shortcodes( $content );
+	}
+
+	$chunks = array_map(
+		static function ( array $chunk ): array {
+			$chunk['sentences'] = Splecheh_InterpunctionReport::split_into_sentences( $chunk['text'] );
+			return $chunk;
+		},
+		Splecheh_ContentSplitter::split( $content )
+	);
+
+	wp_send_json_success(
+		[
+			'source'      => $source,
+			'post_title'  => $post_title,
+			'chunk_count' => count( $chunks ),
+			'chunks'      => $chunks,
+			'raw_length'  => strlen( $raw_content ),
+		]
+	);
+}
+
+/**
+ * Autocomplete search for the Split Test page's post picker, matching titles across
+ * the post types enabled for checking. Mirrors the Interpunction test search.
+ */
+function splecheh_ajax_split_test_search_posts(): void {
+	check_ajax_referer( 'splecheh_split_test', 'nonce' );
+
+	if ( ! current_user_can( 'edit_posts' ) ) {
+		wp_send_json_error( [ 'message' => __( 'Insufficient permissions.', 'splecheh' ) ], 403 );
+	}
+
+	$search = isset( $_GET['s'] ) ? sanitize_text_field( wp_unslash( $_GET['s'] ) ) : '';
+	if ( $search === '' ) {
+		wp_send_json_success( [] );
+	}
+
+	$query = new WP_Query(
+		[
+			's'                      => $search,
+			'post_type'              => splecheh_get_enabled_post_types(),
+			'post_status'            => 'publish',
+			'posts_per_page'         => 20,
+			'orderby'                => 'relevance',
+			'no_found_rows'          => true,
+			'update_post_meta_cache' => false,
+			'update_post_term_cache' => false,
+		]
+	);
+
+	$results = array_map(
+		static function ( WP_Post $post ): array {
+			return [
+				'id'    => $post->ID,
+				'label' => $post->post_title !== '' ? $post->post_title : '(no title)',
+			];
+		},
+		$query->posts
+	);
+
+	wp_send_json_success( $results );
+}
+
+function splecheh_ajax_interpunction_details_rerun(): void {
+	check_ajax_referer( 'splecheh_interpunction_details', 'nonce' );
+
+	$post_id = isset( $_POST['post_id'] ) ? absint( $_POST['post_id'] ) : 0;
+	if ( ! $post_id || ! current_user_can( 'edit_post', $post_id ) || ! splecheh_interpunction_enabled() ) {
+		wp_send_json_error( __( 'Insufficient permissions.', 'splecheh' ), 403 );
+	}
+
+	$result = splecheh_run_interpunction_check_for_post( $post_id );
+	if ( is_wp_error( $result ) ) {
+		wp_send_json_error( [ 'message' => $result->get_error_message() ] );
+	}
+
+	wp_send_json_success(
+		[
+			'issues' => Splecheh_InterpunctionReport::format_issues_for_details( $result['issues'] ),
+		]
+	);
+}
+
+/**
+ * Reads post_id/report from the request for the Interpunction Details page AJAX actions.
+ *
+ * @return array{0: int, 1: array}|null Null and a JSON error response are sent on failure.
+ */
+function splecheh_get_interpunction_details_request_context(): ?array {
+	$post_id = isset( $_POST['post_id'] ) ? absint( $_POST['post_id'] ) : 0;
+	if ( ! $post_id || ! current_user_can( 'edit_post', $post_id ) ) {
+		wp_send_json_error( __( 'Insufficient permissions.', 'splecheh' ), 403 );
+	}
+
+	$report = Splecheh_InterpunctionReport::get_report( $post_id );
+	if ( ! $report ) {
+		wp_send_json_error( __( 'Report not found.', 'splecheh' ), 404 );
+	}
+
+	return [ $post_id, $report ];
+}
+
+/**
+ * Re-runs Spell Check for a post right after an interpunction fix was written into it.
+ *
+ * Writing the fix bumps post_modified_gmt, which makes the post's saved Spell Check
+ * "Outdated" — and with "Require Spell Check First" on, that blocks the post from any
+ * further Interpunction Check until someone re-runs Spell Check by hand. Re-running it
+ * here clears that, and doubles as a verification that the sentence we just rewrote
+ * didn't introduce a spelling error of its own: if it did, the post stays blocked,
+ * which is the correct outcome.
+ *
+ * Only posts that already have a Spell Check report are refreshed — for a post that was
+ * never spell-checked there is nothing to keep up to date.
+ *
+ * @return array{ran: bool, issues: int, error: string}
+ */
+function splecheh_refresh_spellcheck_after_interpunction_fix( int $post_id ): array {
+	$summary = [ 'ran' => false, 'issues' => 0, 'error' => '' ];
+
+	if ( ! get_post_meta( $post_id, '_splecheh_checked_at', true ) ) {
+		return $summary;
+	}
+
+	$result = splecheh_run_spellcheck_for_post( $post_id );
+	if ( is_wp_error( $result ) ) {
+		$summary['error'] = $result->get_error_message();
+		return $summary;
+	}
+
+	$summary['ran']    = true;
+	$summary['issues'] = count( $result['errors'] );
+
+	return $summary;
+}
+
+function splecheh_ajax_interpunction_fix(): void {
+	check_ajax_referer( 'splecheh_interpunction_details', 'nonce' );
+
+	[ $post_id, $report ] = splecheh_get_interpunction_details_request_context();
+
+	$items = isset( $_POST['items'] ) ? json_decode( wp_unslash( $_POST['items'] ), true ) : null;
+	if ( ! is_array( $items ) || empty( $items ) ) {
+		wp_send_json_error( __( 'Invalid request.', 'splecheh' ), 400 );
+	}
+
+	$post = get_post( $post_id );
+	if ( ! $post ) {
+		wp_send_json_error( __( 'Post not found.', 'splecheh' ), 404 );
+	}
+
+	$content    = $post->post_content;
+	$applied    = [];
+	$unapplied  = [];
+	$spellcheck = [ 'ran' => false, 'issues' => 0, 'error' => '' ];
+
+	foreach ( $items as $item ) {
+		$index      = isset( $item['index'] ) ? absint( $item['index'] ) : -1;
+		$fixed_text = isset( $item['fixed'] ) ? sanitize_textarea_field( wp_unslash( $item['fixed'] ) ) : '';
+
+		if ( $fixed_text === '' || ! isset( $report['issues'][ $index ] ) || ! empty( $report['issues'][ $index ]['resolved'] ) ) {
+			continue;
+		}
+
+		$issue   = $report['issues'][ $index ];
+		$updated = Splecheh_InterpunctionReport::apply_fix( $content, $issue['original'], $fixed_text );
+
+		// The sentence isn't in the content any more (edited since the check, or broken
+		// up by inline markup). Leave the issue unresolved and tell the user, rather
+		// than reporting a fix that never reached the post.
+		if ( $updated === null ) {
+			$unapplied[] = $index;
+			Splecheh_Logs::addLog(
+				'interpunction',
+				"Fix not applied in post {$post_id}: sentence no longer found in the content",
+				[ 'original' => $issue['original'] ]
+			);
+			continue;
+		}
+
+		$content           = $updated;
+		$applied[ $index ] = $fixed_text;
+	}
+
+	if ( ! empty( $applied ) ) {
+		wp_update_post(
+			[
+				'ID'           => $post_id,
+				'post_content' => $content,
+			]
+		);
+
+		// Trust the saved post, not our own string replacement: re-read and re-split it
+		// and drop anything that didn't survive the write (kses, another plugin's
+		// content filter), so a report never claims a fix the post doesn't have.
+		foreach ( Splecheh_SpellCheckReport::find_unapplied_fixes( $post_id, $applied ) as $index ) {
+			unset( $applied[ $index ] );
+			$unapplied[] = $index;
+			Splecheh_Logs::addLog(
+				'interpunction',
+				"Fix did not survive saving post {$post_id}: text missing from the stored content",
+				[ 'index' => $index ]
+			);
+		}
+	}
+
+	foreach ( $applied as $index => $fixed_text ) {
+		$report['issues'][ $index ]['resolved'] = true;
+		$report['issues'][ $index ]['fixed']    = $fixed_text;
+	}
+
+	$fixed = count( $applied );
+
+	if ( $fixed > 0 ) {
+		Splecheh_InterpunctionReport::update_report( $post_id, $report );
+		Splecheh_Logs::addLog( 'interpunction', "Fixed {$fixed} sentence(s) in post {$post_id}", [] );
+
+		$spellcheck = splecheh_refresh_spellcheck_after_interpunction_fix( $post_id );
+	}
+
+	wp_send_json_success(
+		[
+			'fixed'            => $fixed,
+			'unapplied'        => array_values( $unapplied ),
+			'unresolved_count' => Splecheh_InterpunctionReport::count_unresolved( $post_id ),
+			'spellcheck'       => $spellcheck,
+		]
+	);
+}
+
+function splecheh_ajax_interpunction_ignore_in_post(): void {
+	check_ajax_referer( 'splecheh_interpunction_details', 'nonce' );
+
+	[ $post_id, $report ] = splecheh_get_interpunction_details_request_context();
+
+	$indices = isset( $_POST['indices'] ) ? json_decode( wp_unslash( $_POST['indices'] ), true ) : null;
+	if ( ! is_array( $indices ) || empty( $indices ) ) {
+		wp_send_json_error( __( 'Invalid request.', 'splecheh' ), 400 );
+	}
+
+	$ignored_sentences = (array) get_post_meta( $post_id, '_splecheh_interpunction_ignored_sentences', true );
+	$count             = 0;
+
+	foreach ( $indices as $index ) {
+		$index = absint( $index );
+		if ( ! isset( $report['issues'][ $index ] ) || ! empty( $report['issues'][ $index ]['resolved'] ) ) {
+			continue;
+		}
+
+		$original = $report['issues'][ $index ]['original'];
+		if ( ! in_array( $original, $ignored_sentences, true ) ) {
+			$ignored_sentences[] = $original;
+		}
+		$report['issues'][ $index ]['resolved'] = true;
+		$count++;
+	}
+
+	if ( $count > 0 ) {
+		update_post_meta( $post_id, '_splecheh_interpunction_ignored_sentences', $ignored_sentences );
+		Splecheh_InterpunctionReport::update_report( $post_id, $report );
+	}
+
+	wp_send_json_success(
+		[
+			'ignored'          => $count,
+			'unresolved_count' => Splecheh_InterpunctionReport::count_unresolved( $post_id ),
+		]
+	);
+}
+
+function splecheh_ajax_interpunction_mark_complete(): void {
+	check_ajax_referer( 'splecheh_interpunction_details', 'nonce' );
+
+	$post_id = isset( $_POST['post_id'] ) ? absint( $_POST['post_id'] ) : 0;
+	if ( ! $post_id || ! current_user_can( 'edit_post', $post_id ) || ! splecheh_interpunction_enabled() ) {
+		wp_send_json_error( __( 'Insufficient permissions.', 'splecheh' ), 403 );
+	}
+
+	$report = Splecheh_InterpunctionReport::mark_complete( $post_id );
+	if ( is_wp_error( $report ) ) {
+		wp_send_json_error( [ 'message' => $report->get_error_message() ] );
+	}
+
+	Splecheh_Logs::addLog( 'interpunction', "Marked interpunction check complete for post {$post_id}", [] );
+
+	wp_send_json_success(
+		[
+			'issues' => Splecheh_InterpunctionReport::format_issues_for_details( $report['issues'] ),
+		]
+	);
+}
