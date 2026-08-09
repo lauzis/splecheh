@@ -1849,3 +1849,19 @@ function splecheh_ajax_interpunction_mark_complete(): void {
 		]
 	);
 }
+
+// The plugin's version in the admin footer, beside WordPress's own — the first
+// thing worth knowing about a page misbehaving is which version drew it.
+add_action( 'admin_init', static function () {
+    if ( ! class_exists( '\\Lauzis\\WpPackages\\Admin\\Footer' ) ) {
+        return;
+    }
+
+    \Lauzis\WpPackages\Admin\Footer::show(
+        'splecheh',
+        array(
+            'name'    => 'Splecheh',
+            'version' => defined( 'SPLECHEH_VERSION' ) ? SPLECHEH_VERSION : '',
+        )
+    );
+} );
