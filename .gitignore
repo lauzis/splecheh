@@ -1,5 +1,8 @@
-# composer.lock is committed: this is a plugin, not a library, so the shipped
-# vendor/ and the lock file should describe the same resolved dependency set.
+# vendor/ is built rather than committed: composer install on deploy.
+# The plugin refuses to load without it and says so, rather than fataling.
+# composer.lock stays in git, so that install resolves what was tested.
+/vendor/
+
 .phpunit.result.cache
 tools/.run/
 logs/
