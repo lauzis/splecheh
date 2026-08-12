@@ -7,13 +7,12 @@
  * Never loaded at runtime.
  *
  * Regenerate with:
- *   bin/schema-i18n --domain=splecheh --out=languages/schema-strings.php config/settings.json config/logs.json
+ *   bin/schema-i18n --domain=splecheh --out=languages/schema-strings.php config/settings.json
  */
 
 return;
 
 __( '@callback:splecheh_interpunction_test_field', 'splecheh' );
-__( '@callback:splecheh_logs_view', 'splecheh' );
 __( 'A post\'s sentences are sent to the provider this many at a time per call, not all at once — a real post can have far more sentences than a quick test, and a single call for dozens of sentences can take too long to finish before it times out (especially for a local model or a long post). Lower this if calls still time out; raise it to use fewer, larger calls if your provider handles it comfortably. Set to 0 to disable chunking (send everything in one call). Default: 5.', 'splecheh' );
 __( 'API token used to authenticate with the selected provider. Not needed (or stored) for the Commandline type.', 'splecheh' );
 __( 'Access Key', 'splecheh' );

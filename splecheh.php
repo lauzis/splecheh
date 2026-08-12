@@ -3,7 +3,7 @@
  * Plugin Name: Splecheh - WordPress spellcheck plugin
  * Plugin URI:  https://github.com/lauzis/splecheh
  * Description: Run spell check on all articles and post types to find spelling errors.
- * Version:     0.30.0
+ * Version:     0.29.2
  * Author:      Aivars Lauzis
  * Text Domain: splecheh
  * License:     MIT
@@ -14,7 +14,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'SPLECHEH_VERSION', '0.30.0' );
+define( 'SPLECHEH_VERSION', '0.29.2' );
 define( 'SPLECHEH_DIR', plugin_dir_path( __FILE__ ) );
 define( 'SPLECHEH_PLUGIN_FILE', __FILE__ );
 
@@ -250,7 +250,6 @@ function splecheh_register_menu(): void {
 
 // Register the Settings page via Carbon Fields — replaces the manual submenu stub.
 add_action( 'carbon_fields_register_fields', 'splecheh_register_settings_fields' );
-add_action( 'admin_post_splecheh_clear_logs', [ 'Splecheh_Logs', 'handleClear' ] );
 
 function splecheh_register_settings_fields(): void {
 	if ( ! class_exists( 'WpPackages_Registry' ) ) {
@@ -311,19 +310,6 @@ function splecheh_register_settings_fields(): void {
 			'prefix'   => 'splecheh_',
 			'domain'   => 'wp-plugin-packages',
 			'defaults' => [ 'logs_enabled' => true ],
-		]
-	);
-
-	// The log itself, added to the section the package just declared so the
-	// switch and what it writes share a tab. Whether it appears at all is this
-	// plugin's decision, which is why it is registered here.
-	$settings->callback( 'splecheh_logs_view', [ 'Splecheh_Logs', 'panel' ] );
-
-	$settings->register(
-		SPLECHEH_DIR . 'config/logs.json',
-		[
-			'prefix' => 'splecheh_',
-			'domain' => 'splecheh',
 		]
 	);
 
