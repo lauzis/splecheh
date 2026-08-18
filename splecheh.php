@@ -3,7 +3,7 @@
  * Plugin Name: Splecheh - WordPress spellcheck plugin
  * Plugin URI:  https://github.com/lauzis/splecheh
  * Description: Run spell check on all articles and post types to find spelling errors.
- * Version:     0.30.0
+ * Version:     0.30.1
  * Author:      Aivars Lauzis
  * Text Domain: splecheh
  * License:     MIT
@@ -14,7 +14,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'SPLECHEH_VERSION', '0.30.0' );
+define( 'SPLECHEH_VERSION', '0.30.1' );
 define( 'SPLECHEH_DIR', plugin_dir_path( __FILE__ ) );
 define( 'SPLECHEH_PLUGIN_FILE', __FILE__ );
 
@@ -251,6 +251,21 @@ function splecheh_register_menu(): void {
 // Register the Settings page via Carbon Fields — replaces the manual submenu stub.
 add_action( 'carbon_fields_register_fields', 'splecheh_register_settings_fields' );
 
+// The Slack test button answers over admin-ajax, which never renders the
+// settings page, so its endpoint is registered on every admin request.
+if ( is_admin() ) {
+	add_action(
+		'admin_init',
+		static function (): void {
+			$tester = Splecheh_Logs::slackTester();
+
+			if ( $tester ) {
+				$tester->boot();
+			}
+		}
+	);
+}
+
 function splecheh_register_settings_fields(): void {
 	if ( ! class_exists( 'WpPackages_Registry' ) ) {
 		return;
@@ -300,6 +315,15 @@ function splecheh_register_settings_fields(): void {
 			'domain' => 'splecheh',
 		]
 	);
+
+	// Draws the "Send a test message" button under the Slack webhook field.
+	// Without the callback the schema's html field renders nothing, so an older
+	// bundled package simply has no button.
+	$tester = Splecheh_Logs::slackTester();
+
+	if ( $tester ) {
+		$settings->callback( 'logs_slack_test', [ $tester, 'render' ] );
+	}
 
 	// Logging settings come from the shared package, so every plugin presents
 	// the same control. The prefix lands it on splecheh_logs_enabled, the key

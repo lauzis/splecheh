@@ -2,6 +2,9 @@
 
 Every release, newest first. The README repeats only the most recent entry.
 
+## --- 0.30.1 ---
+- Added a **"Send a test message" button** beside the Slack webhook field. It posts to whatever is in the field, saved or not, waits for Slack's answer and reports it — log traffic is fire-and-forget, so a webhook Slack rejects otherwise fails silently, and the settings page had no way to tell you.
+
 ## --- 0.30.0 ---
 - Log entries can now be **posted to a Slack incoming webhook**. Two fields on the Logging settings: the webhook URL, and whether Slack gets errors only (the default) or every entry. Errors are posted even with file logging switched off, which is the point — a log file only answers a question once somebody thinks to open it, and on a site checked at most weekly the interesting entry is days old by then. Sending is fire-and-forget so a log call never makes the page wait on Slack; the cost is that a webhook Slack rejects fails quietly. Only `https://` URLs are used, since the URL is itself the credential and anyone holding it can post to the channel. "Every log entry" means one HTTP request per entry against a webhook Slack rate-limits to roughly a message a second, so it belongs on a specific investigation rather than left on — a background Interpunction Check run over a few hundred posts would spend the whole budget on routine lines and drop the errors that matter.
 
