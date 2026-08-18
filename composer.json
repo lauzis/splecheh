@@ -13,7 +13,7 @@
         "php": ">=8.0",
         "htmlburger/carbon-fields": "^3.6",
         "tigitz/php-spellchecker": "^0.8.0",
-        "lauzis/wp-plugin-packages": "^1.14"
+        "lauzis/wp-plugin-packages": "^1.15"
     },
     "config": {
         "optimize-autoloader": true
