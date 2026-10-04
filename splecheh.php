@@ -3,7 +3,7 @@
  * Plugin Name: Splecheh - WordPress spellcheck plugin
  * Plugin URI:  https://github.com/lauzis/splecheh
  * Description: Run spell check on all articles and post types to find spelling errors.
- * Version:     0.30.1
+ * Version:     0.30.2
  * Author:      Aivars Lauzis
  * Text Domain: splecheh
  * License:     MIT
@@ -14,7 +14,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'SPLECHEH_VERSION', '0.30.1' );
+define( 'SPLECHEH_VERSION', '0.30.2' );
 define( 'SPLECHEH_DIR', plugin_dir_path( __FILE__ ) );
 define( 'SPLECHEH_PLUGIN_FILE', __FILE__ );
 
@@ -64,7 +64,10 @@ add_action(
 		}
 		\Carbon_Fields\Carbon_Fields::boot();
 
-		if ( ! \Composer\InstalledVersions::isInstalled( 'tigitz/php-spellchecker' ) ) {
+		// Probe the class, not Composer\InstalledVersions: that class is shared by
+		// every plugin, and when another one (e.g. WPML) loads a Composer 1
+		// ClassLoader first it only sees that plugin's packages.
+		if ( ! class_exists( '\\PhpSpellcheck\\MisspellingFinder' ) ) {
 			Splecheh_NotificationManager::register(
 				new Splecheh_Notification(
 					'missing-php-spellchecker',

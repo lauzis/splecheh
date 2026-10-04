@@ -255,7 +255,7 @@ Run `composer install` to pull in dev dependencies (PHPUnit), then `composer tes
 ## Change log
 Only the most recent release is listed here — see [CHANGELOG.md](CHANGELOG.md) for the full history.
 
-### --- 0.30.1 ---
-- Added a **"Send a test message" button** beside the Slack webhook field. It posts to whatever is in the field, saved or not, waits for Slack's answer and reports it — log traffic is fire-and-forget, so a webhook Slack rejects otherwise fails silently, and the settings page had no way to tell you.
+### --- 0.30.2 ---
+- Fixed a **false "The spell-check library is missing" notice** on sites where another plugin (WPML here) loads a Composer 1 `ClassLoader` first. The check asked `Composer\InstalledVersions`, which every plugin shares; with that old loader in front it only sees the first plugin's packages, so splecheh's bundled `tigitz/php-spellchecker` looked absent although it was installed and working. It now checks that the library's class can be loaded instead.
 
 > This project is maintained with the assistance of [Claude Code](https://claude.ai/code) and [CodeRabbit](https://coderabbit.ai).
